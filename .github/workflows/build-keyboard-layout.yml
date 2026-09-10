@@ -70,14 +70,11 @@ jobs:
         run: |
           $work = "C:\build_amd64"
           New-Item -ItemType Directory -Path $work | Out-Null
-          Copy-Item $env:KLC_FILE $work
-          Push-Location $work
-          & $env:KBDUTOOL -u -m $env:KLC_FILE
-          $exitCode = $LASTEXITCODE
-          Pop-Location
+          $layout = Resolve-Path $env:KLC_FILE
+          $proc = Start-Process -NoNewWindow -Wait -PassThru -FilePath $env:KBDUTOOL -WorkingDirectory $work -ArgumentList "-v", "-w", "-m", "-u", "$layout"
           Write-Host "---- amd64 build output ----"
           Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if ($exitCode -ne 0) { throw "kbdutool failed (amd64), exit code $exitCode" }
+          if ($proc.ExitCode -ne 0) { throw "kbdutool failed (amd64), exit code $($proc.ExitCode)" }
           if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No amd64 .dll produced" }
 
       - name: Build x86 layout DLL
@@ -86,14 +83,11 @@ jobs:
         run: |
           $work = "C:\build_x86"
           New-Item -ItemType Directory -Path $work | Out-Null
-          Copy-Item $env:KLC_FILE $work
-          Push-Location $work
-          & $env:KBDUTOOL -u -x $env:KLC_FILE
-          $exitCode = $LASTEXITCODE
-          Pop-Location
+          $layout = Resolve-Path $env:KLC_FILE
+          $proc = Start-Process -NoNewWindow -Wait -PassThru -FilePath $env:KBDUTOOL -WorkingDirectory $work -ArgumentList "-v", "-w", "-x", "-u", "$layout"
           Write-Host "---- x86 build output ----"
           Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if ($exitCode -ne 0) { throw "kbdutool failed (x86), exit code $exitCode" }
+          if ($proc.ExitCode -ne 0) { throw "kbdutool failed (x86), exit code $($proc.ExitCode)" }
           if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No x86 .dll produced" }
 
       - name: Package installable layout
