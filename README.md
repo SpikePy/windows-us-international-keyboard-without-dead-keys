@@ -9,11 +9,11 @@ symbol, and the accented character appears immediately - nothing waits for
 a second keystroke. It works on top of whatever keyboard layout you
 already have active.
 
-The apostrophe (`'`) and backtick/grave (`` ` ``) keys are also always
-forced to their plain character immediately, even without AltGr - some
-built-in Windows layouts (like "United States-International") treat those
-as dead keys by default, and this overrides that regardless of which
-layout is active.
+The apostrophe (`'`), backtick/grave (`` ` ``/`~`), and `6`/`^` keys are
+also always forced to their plain character immediately, even without
+AltGr - some built-in Windows layouts (like "United States-International")
+treat those as dead keys by default, and this overrides that regardless of
+which layout is active.
 
 | Key | AltGr | Shift+AltGr | | Key | AltGr | Shift+AltGr |
 |-----|-------|-------------|-|-----|-------|-------------|

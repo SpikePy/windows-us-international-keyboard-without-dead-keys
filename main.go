@@ -58,6 +58,7 @@ const (
 var undeadMap = map[uint32][2]rune{
 	vkOem7: {'\'', '"'},
 	vkOem3: {'`', '~'},
+	'6':    {'6', '^'},
 }
 
 // altGrMap maps a virtual-key code to its {base, Shift+AltGr} characters.
