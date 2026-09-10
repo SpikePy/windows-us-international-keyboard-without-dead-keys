@@ -64,68 +64,36 @@ jobs:
             ForEach-Object { $_.DirectoryName } | Select-Object -Unique |
             ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
 
-      - name: Diagnose - run kbdutool.exe with zero arguments
-        shell: pwsh
-        timeout-minutes: 2
-        run: |
-          $proc = Start-Process -NoNewWindow -Wait -PassThru -FilePath $env:KBDUTOOL
-          Write-Host "bare invocation exit code: $($proc.ExitCode)"
-
-      - name: Diagnose - system locale and codepage
-        shell: pwsh
-        run: |
-          Write-Host "Current culture: $([System.Globalization.CultureInfo]::CurrentCulture)"
-          Write-Host "Current UI culture: $([System.Globalization.CultureInfo]::CurrentUICulture)"
-          Get-WinSystemLocale | Format-List
-          Get-WinHomeLocation | Format-List
-          Get-Culture | Format-List
-          Write-Host "OEM/ANSI codepage (chcp):"
-          chcp
-          Write-Host "Registry ACP/OEMCP:"
-          Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage" | Select-Object ACP, OEMCP | Format-List
-
-      - name: Diagnose - inspect checked-out .klc bytes for corruption
-        shell: pwsh
-        run: |
-          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $env:KLC_FILE))
-          Write-Host "Total bytes: $($bytes.Length)"
-          Write-Host "First 40 bytes (hex):"
-          Write-Host (($bytes[0..39] | ForEach-Object { $_.ToString("x2") }) -join " ")
-          $crlfCount = 0
-          $crcrlfCount = 0
-          for ($i = 0; $i -lt $bytes.Length - 1; $i++) {
-            if ($bytes[$i] -eq 0x0D -and $bytes[$i+1] -eq 0x0A) { $crlfCount++ }
-            if ($i -lt $bytes.Length - 2 -and $bytes[$i] -eq 0x0D -and $bytes[$i+1] -eq 0x0D -and $bytes[$i+2] -eq 0x0A) { $crcrlfCount++ }
-          }
-          Write-Host "CRLF count: $crlfCount"
-          Write-Host "CRCRLF (doubled CR) count: $crcrlfCount"
-
       - name: Build amd64 (x64) layout DLL
         shell: pwsh
         timeout-minutes: 5
         run: |
-          chcp 437 | Out-Null
           $work = "C:\build_amd64"
           New-Item -ItemType Directory -Path $work | Out-Null
-          $layout = Resolve-Path $env:KLC_FILE
-          $proc = Start-Process -NoNewWindow -Wait -PassThru -FilePath $env:KBDUTOOL -WorkingDirectory $work -ArgumentList "-v", "-w", "-m", "-u", "$layout"
+          Copy-Item $env:KLC_FILE $work
+          Push-Location $work
+          & $env:KBDUTOOL -u -m $env:KLC_FILE
+          $exitCode = $LASTEXITCODE
+          Pop-Location
           Write-Host "---- amd64 build output ----"
           Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if ($proc.ExitCode -ne 0) { throw "kbdutool failed (amd64), exit code $($proc.ExitCode)" }
+          if ($exitCode -ne 0) { throw "kbdutool failed (amd64), exit code $exitCode" }
           if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No amd64 .dll produced" }
 
       - name: Build x86 layout DLL
         shell: pwsh
         timeout-minutes: 5
         run: |
-          chcp 437 | Out-Null
           $work = "C:\build_x86"
           New-Item -ItemType Directory -Path $work | Out-Null
-          $layout = Resolve-Path $env:KLC_FILE
-          $proc = Start-Process -NoNewWindow -Wait -PassThru -FilePath $env:KBDUTOOL -WorkingDirectory $work -ArgumentList "-v", "-w", "-x", "-u", "$layout"
+          Copy-Item $env:KLC_FILE $work
+          Push-Location $work
+          & $env:KBDUTOOL -u -x $env:KLC_FILE
+          $exitCode = $LASTEXITCODE
+          Pop-Location
           Write-Host "---- x86 build output ----"
           Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if ($proc.ExitCode -ne 0) { throw "kbdutool failed (x86), exit code $($proc.ExitCode)" }
+          if ($exitCode -ne 0) { throw "kbdutool failed (x86), exit code $exitCode" }
           if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No x86 .dll produced" }
 
       - name: Package installable layout
