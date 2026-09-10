@@ -70,6 +70,13 @@ jobs:
           name: msklc-toolchain
           path: C:\msklc
 
+      - name: Convert .klc to UTF-16LE without BOM (kbdutool requirement)
+        shell: pwsh
+        run: |
+          $content = Get-Content -Path $env:KLC_FILE -Raw
+          $noBomUnicode = New-Object System.Text.UnicodeEncoding($false, $false)
+          [System.IO.File]::WriteAllText((Join-Path (Get-Location) $env:KLC_FILE), $content, $noBomUnicode)
+
       - name: Diagnose - generate C source only (no compile)
         shell: pwsh
         timeout-minutes: 5
