@@ -3,10 +3,10 @@ name: Build US-AltGr-International keyboard layout
 on:
   push:
     paths:
-      - "kbdusaltgr.c"
-      - "kbdusaltgr.def"
-      - "kbdusaltgr.rc"
+      - "US-AltGr-International.klc"
       - "kbd.h"
+      - "kbdusaltgr.rc"
+      - "tools/klc2c/**"
       - ".github/workflows/build-keyboard-layout.yml"
   workflow_dispatch: {}
 
@@ -16,15 +16,27 @@ jobs:
     # STATUS_STACK_BUFFER_OVERRUN on GitHub's current hosted Windows runner
     # images, regardless of .klc content - confirmed via runner-image-version
     # comparison to be an environment regression, not a content issue. We
-    # bypass it (and MSKLC's installer download) entirely: kbdusaltgr.c is a
-    # hand-written keyboard layout source (based on Microsoft's own kbdus.c
-    # reference sample) and kbd.h is a minimal, self-authored header with
-    # just the KBDTABLES-family definitions it needs, both compiled directly
-    # with cl.exe/link.exe.
+    # bypass it (and MSKLC's installer download) entirely: tools/klc2c is a
+    # small Go program that generates the keyboard layout DLL's C source
+    # (grounded in Microsoft's own kbdus.c reference sample) directly from
+    # the .klc, and kbd.h is a minimal, self-authored header with just the
+    # KBDTABLES-family definitions it needs. Both get compiled with
+    # cl.exe/link.exe.
     runs-on: windows-2022
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Generate kbdusaltgr.c from the .klc
+        shell: pwsh
+        run: |
+          go build -o klc2c.exe ./tools/klc2c
+          .\klc2c.exe -in US-AltGr-International.klc -out kbdusaltgr.c -def kbdusaltgr.def
 
       - name: Set up MSVC (amd64)
         uses: ilammy/msvc-dev-cmd@v1

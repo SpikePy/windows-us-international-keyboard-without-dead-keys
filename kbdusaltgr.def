@@ -1,4 +1,0 @@
-LIBRARY KBDUSALTGR
-
-EXPORTS
-    KbdLayerDescriptor @1
