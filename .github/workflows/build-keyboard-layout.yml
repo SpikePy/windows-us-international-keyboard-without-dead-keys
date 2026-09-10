@@ -32,11 +32,14 @@ jobs:
         with:
           go-version: "1.24"
 
+      - name: Build klc2c
+        shell: pwsh
+        working-directory: tools/klc2c
+        run: go build -o ../../klc2c.exe .
+
       - name: Generate kbdusaltgr.c from the .klc
         shell: pwsh
-        run: |
-          go build -o klc2c.exe ./tools/klc2c
-          .\klc2c.exe -in US-AltGr-International.klc -out kbdusaltgr.c -def kbdusaltgr.def
+        run: .\klc2c.exe -in US-AltGr-International.klc -out kbdusaltgr.c -def kbdusaltgr.def
 
       - name: Set up MSVC (amd64)
         uses: ilammy/msvc-dev-cmd@v1
