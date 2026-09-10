@@ -1,4 +1,9 @@
+#!/usr/bin/env pwsh
 #Requires -RunAsAdministrator
+# This is a Windows PowerShell script - it edits the Windows registry and
+# copies files into System32/SysWOW64, so it only works run under native
+# Windows PowerShell on an actual Windows machine (not WSL/Linux/macOS bash).
+#
 # Installs the compiled US-AltGr-International keyboard layout on this machine.
 # Run this from an elevated PowerShell prompt (Run as Administrator), from the
 # folder produced by the GitHub Action (it must contain the .dll files and dllname.txt).

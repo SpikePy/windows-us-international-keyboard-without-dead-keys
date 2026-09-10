@@ -1,4 +1,9 @@
+#!/usr/bin/env pwsh
 #Requires -RunAsAdministrator
+# This is a Windows PowerShell script - it edits the Windows registry and
+# removes files from System32/SysWOW64, so it only works run under native
+# Windows PowerShell on an actual Windows machine (not WSL/Linux/macOS bash).
+#
 # Removes the US-AltGr-International keyboard layout installed by install-layout.ps1.
 # Run this from an elevated PowerShell prompt (Run as Administrator).
 
