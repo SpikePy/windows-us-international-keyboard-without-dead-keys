@@ -74,7 +74,9 @@ jobs:
         shell: cmd
         run: |
           mkdir build_amd64
-          cl.exe /nologo /LD /Fe:build_amd64\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
+          rc.exe /nologo /fo build_amd64\kbdusaltgr.res kbdusaltgr.rc
+          if errorlevel 1 exit /b 1
+          cl.exe /nologo /LD /Fe:build_amd64\kbdusaltgr.dll kbdusaltgr.c build_amd64\kbdusaltgr.res kbdusaltgr.def
           if errorlevel 1 exit /b 1
           if not exist build_amd64\kbdusaltgr.dll exit /b 1
 
@@ -86,7 +88,9 @@ jobs:
         shell: cmd
         run: |
           mkdir build_x86
-          cl.exe /nologo /LD /Fe:build_x86\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
+          rc.exe /nologo /fo build_x86\kbdusaltgr.res kbdusaltgr.rc
+          if errorlevel 1 exit /b 1
+          cl.exe /nologo /LD /Fe:build_x86\kbdusaltgr.dll kbdusaltgr.c build_x86\kbdusaltgr.res kbdusaltgr.def
           if errorlevel 1 exit /b 1
           if not exist build_x86\kbdusaltgr.dll exit /b 1
 
