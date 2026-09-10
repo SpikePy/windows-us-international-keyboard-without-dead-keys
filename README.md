@@ -44,7 +44,7 @@ go build -buildvcs=false -ldflags="-H=windowsgui" -o windows-us-international-ke
 Double-click the exe - no installer, no console window. Stop it via Task
 Manager when done.
 
-### Start automatically at login
+### Installation
 
 Run `install-autostart.ps1` from an open PowerShell window (don't
 double-click it - the window closes immediately on completion). It
