@@ -389,7 +389,10 @@ func showTrayMenu(hwnd uintptr) {
 	// Required so the menu closes properly when it loses focus.
 	procSetForegroundWindow.Call(hwnd)
 
-	procTrackPopupMenu.Call(
+	// TPM_RETURNCMD makes TrackPopupMenu return the selected item's ID
+	// directly instead of posting a WM_COMMAND message, so the selection
+	// is handled here rather than in wndProc.
+	cmd, _, _ := procTrackPopupMenu.Call(
 		hMenu,
 		tpmReturnCmd|tpmRightButton,
 		uintptr(pt.X),
@@ -398,6 +401,16 @@ func showTrayMenu(hwnd uintptr) {
 		hwnd,
 		0,
 	)
+
+	switch cmd {
+	case cmdEnable:
+		enabled.Store(true)
+	case cmdDisable:
+		enabled.Store(false)
+	case cmdExit:
+		removeTrayIcon(hwnd)
+		procPostQuitMessage.Call(0)
+	}
 }
 
 func appendMenuItem(hMenu uintptr, flags uintptr, id int, text string) {
