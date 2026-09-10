@@ -3,29 +3,35 @@ name: Build US-AltGr-International keyboard layout
 on:
   push:
     paths:
-      - "US-AltGr-International.klc"
+      - "kbdusaltgr.c"
+      - "kbdusaltgr.def"
+      - "kbdusaltgr.rc"
       - ".github/workflows/build-keyboard-layout.yml"
   workflow_dispatch: {}
 
 jobs:
   build:
-    # Pinned to windows-2022: kbdutool.exe (a ~2007-era 32-bit tool) crashes
-    # with STATUS_STACK_BUFFER_OVERRUN on the windows-latest preview image,
-    # regardless of .klc content - likely due to newer OS exploit mitigations.
+    # kbdutool.exe (MSKLC's ~2007-era 32-bit compiler) crashes with
+    # STATUS_STACK_BUFFER_OVERRUN on GitHub's current hosted Windows runner
+    # images, regardless of .klc content - confirmed via runner-image-version
+    # comparison to be an environment regression, not a content issue. We
+    # bypass kbdutool.exe entirely: kbdusaltgr.c is a hand-written keyboard
+    # layout source (based on Microsoft's own kbdus.c reference sample) that
+    # we compile directly with cl.exe/link.exe, which have been reliable
+    # throughout. Only kbd.h is still sourced from MSKLC (its extraction via
+    # msiexec has never crashed - only executing kbdutool.exe itself does).
     runs-on: windows-2022
     env:
-      KLC_FILE: US-AltGr-International.klc
-      # Official Microsoft Download Center direct link for MSKLC 1.4.
       MSKLC_URL: https://download.microsoft.com/download/6/f/5/6f5ce43a-e892-4fd1-b9a6-1a0cbb64e6e2/MSKLC.exe
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download MSKLC (Microsoft Keyboard Layout Creator)
+      - name: Download MSKLC (for its bundled kbd.h header)
         shell: pwsh
         run: Invoke-WebRequest -Uri $env:MSKLC_URL -OutFile MSKLC.exe
 
-      - name: Extract MSKLC (pull tools out of the installer, no GUI install needed)
+      - name: Extract MSKLC (pull kbd.h out of the installer, no GUI install needed)
         shell: pwsh
         timeout-minutes: 5
         run: |
@@ -36,8 +42,6 @@ jobs:
 
           $candidates = Get-ChildItem -Path C:\msklc_stage1 -Recurse -Filter *.msi
           if (-not $candidates) { throw "No .msi found inside MSKLC.exe" }
-          Write-Host "MSI candidates found:"
-          $candidates | ForEach-Object { Write-Host "  $($_.FullName)" }
 
           $msi = $candidates | Where-Object { $_.Name -match "(?i)msklc|keyboard" } | Select-Object -First 1
           if (-not $msi) { $msi = $candidates | Select-Object -First 1 }
@@ -49,100 +53,51 @@ jobs:
           $proc = Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=C:\msklc" -Wait -PassThru
           if ($proc.ExitCode -ne 0) { throw "msiexec admin install failed with exit code $($proc.ExitCode)" }
 
-          Write-Host "---- Extracted MSKLC tree ----"
-          Get-ChildItem -Path C:\msklc -Recurse | Select-Object -ExpandProperty FullName
-
-      - name: Locate kbdutool.exe and its bundled compiler
+      - name: Locate kbd.h
         shell: pwsh
         run: |
-          $tool = Get-ChildItem -Path C:\msklc -Recurse -Filter kbdutool.exe | Select-Object -First 1
-          if (-not $tool) { throw "kbdutool.exe not found after extracting MSKLC" }
-          Write-Host "kbdutool.exe: $($tool.FullName)"
-          "KBDUTOOL=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $header = Get-ChildItem -Path C:\msklc -Recurse -Filter kbd.h | Select-Object -First 1
+          if (-not $header) { throw "kbd.h not found after extracting MSKLC" }
+          Write-Host "kbd.h: $($header.FullName)"
+          "KBD_H_DIR=$($header.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-          Get-ChildItem -Path C:\msklc -Recurse -Include cl.exe, link.exe, rc.exe, kbdutool.exe |
-            ForEach-Object { $_.DirectoryName } | Select-Object -Unique |
-            ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
-
-      - name: Disable ASLR for kbdutool.exe
-        shell: pwsh
+      - name: Set up MSVC (amd64)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: amd64
+      - name: Compile amd64 (x64) layout DLL
+        shell: cmd
         run: |
-          # The crash is non-deterministic across identical runs with
-          # identical content, suggesting ASLR is affecting a marginal
-          # memory-corruption bug's behavior. Forcing a fixed (bottom-up,
-          # non-relocated) layout to see if it stabilizes the outcome.
-          Set-ProcessMitigation -Name kbdutool.exe -Disable ForceRelocateImages, BottomUp, HighEntropy
+          mkdir build_amd64
+          cl.exe /nologo /LD /I"%KBD_H_DIR%" /Fe:build_amd64\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
+          if errorlevel 1 exit /b 1
+          if not exist build_amd64\kbdusaltgr.dll exit /b 1
 
-      - name: Build amd64 (x64) layout DLL
-        shell: pwsh
-        timeout-minutes: 5
+      - name: Set up MSVC (x86)
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x86
+      - name: Compile x86 layout DLL
+        shell: cmd
         run: |
-          # kbdutool.exe exhibits non-deterministic STATUS_STACK_BUFFER_OVERRUN
-          # crashes across otherwise-identical runs (same binary, same input) -
-          # retrying a few times works around it.
-          $work = "C:\build_amd64"
-          New-Item -ItemType Directory -Path $work | Out-Null
-          Copy-Item $env:KLC_FILE $work
-          Push-Location $work
-          $success = $false
-          for ($attempt = 1; $attempt -le 20; $attempt++) {
-            & $env:KBDUTOOL -u -m $env:KLC_FILE
-            $exitCode = $LASTEXITCODE
-            if ($exitCode -eq 0 -and (Get-ChildItem -Filter *.dll)) {
-              Write-Host "amd64 build succeeded on attempt $attempt"
-              $success = $true
-              break
-            }
-            Write-Host "amd64 build attempt $attempt failed, exit code $exitCode"
-            Get-ChildItem | Remove-Item -Force -ErrorAction SilentlyContinue
-            Copy-Item "$env:GITHUB_WORKSPACE\$env:KLC_FILE" .
-          }
-          Pop-Location
-          Write-Host "---- amd64 build output ----"
-          Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if (-not $success) { throw "kbdutool failed (amd64) after 20 attempts" }
-
-      - name: Build x86 layout DLL
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          $work = "C:\build_x86"
-          New-Item -ItemType Directory -Path $work | Out-Null
-          Copy-Item $env:KLC_FILE $work
-          Push-Location $work
-          $success = $false
-          for ($attempt = 1; $attempt -le 20; $attempt++) {
-            & $env:KBDUTOOL -u -x $env:KLC_FILE
-            $exitCode = $LASTEXITCODE
-            if ($exitCode -eq 0 -and (Get-ChildItem -Filter *.dll)) {
-              Write-Host "x86 build succeeded on attempt $attempt"
-              $success = $true
-              break
-            }
-            Write-Host "x86 build attempt $attempt failed, exit code $exitCode"
-            Get-ChildItem | Remove-Item -Force -ErrorAction SilentlyContinue
-            Copy-Item "$env:GITHUB_WORKSPACE\$env:KLC_FILE" .
-          }
-          Pop-Location
-          Write-Host "---- x86 build output ----"
-          Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if (-not $success) { throw "kbdutool failed (x86) after 20 attempts" }
+          mkdir build_x86
+          cl.exe /nologo /LD /I"%KBD_H_DIR%" /Fe:build_x86\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
+          if errorlevel 1 exit /b 1
+          if not exist build_x86\kbdusaltgr.dll exit /b 1
 
       - name: Package installable layout
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path package | Out-Null
 
-          $dllAmd64 = Get-ChildItem -Path C:\build_amd64 -Filter *.dll | Select-Object -First 1
-          $dllX86 = Get-ChildItem -Path C:\build_x86 -Filter *.dll | Select-Object -First 1
-
-          Copy-Item $dllAmd64.FullName "package\$($dllAmd64.Name)"
-          Copy-Item $dllX86.FullName "package\x86_$($dllAmd64.Name)"
-          Set-Content -Path "package\dllname.txt" -Value $dllAmd64.Name -Encoding ascii
+          Copy-Item build_amd64\kbdusaltgr.dll "package\kbdusaltgr.dll"
+          Copy-Item build_x86\kbdusaltgr.dll "package\x86_kbdusaltgr.dll"
+          Set-Content -Path "package\dllname.txt" -Value "kbdusaltgr.dll" -Encoding ascii
 
           Copy-Item install-layout.ps1 package\
           Copy-Item uninstall-layout.ps1 package\
-          Copy-Item $env:KLC_FILE package\
+          Copy-Item kbdusaltgr.c package\
+          Copy-Item US-AltGr-International.klc package\ -ErrorAction SilentlyContinue
 
           Write-Host "---- Package contents ----"
           Get-ChildItem package | Select-Object -ExpandProperty FullName
