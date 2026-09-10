@@ -71,6 +71,22 @@ jobs:
           $proc = Start-Process -NoNewWindow -Wait -PassThru -FilePath $env:KBDUTOOL
           Write-Host "bare invocation exit code: $($proc.ExitCode)"
 
+      - name: Diagnose - inspect checked-out .klc bytes for corruption
+        shell: pwsh
+        run: |
+          $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $env:KLC_FILE))
+          Write-Host "Total bytes: $($bytes.Length)"
+          Write-Host "First 40 bytes (hex):"
+          Write-Host (($bytes[0..39] | ForEach-Object { $_.ToString("x2") }) -join " ")
+          $crlfCount = 0
+          $crcrlfCount = 0
+          for ($i = 0; $i -lt $bytes.Length - 1; $i++) {
+            if ($bytes[$i] -eq 0x0D -and $bytes[$i+1] -eq 0x0A) { $crlfCount++ }
+            if ($i -lt $bytes.Length - 2 -and $bytes[$i] -eq 0x0D -and $bytes[$i+1] -eq 0x0D -and $bytes[$i+2] -eq 0x0A) { $crcrlfCount++ }
+          }
+          Write-Host "CRLF count: $crlfCount"
+          Write-Host "CRCRLF (doubled CR) count: $crcrlfCount"
+
       - name: Build amd64 (x64) layout DLL
         shell: pwsh
         timeout-minutes: 5
