@@ -61,12 +61,6 @@ jobs:
             ForEach-Object { $_.DirectoryName } | Select-Object -Unique |
             ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
 
-      - name: Convert .klc to UTF-16LE (kbdutool requirement)
-        shell: pwsh
-        run: |
-          $content = Get-Content -Path $env:KLC_FILE -Raw
-          Set-Content -Path $env:KLC_FILE -Value $content -Encoding Unicode
-
       - name: Build amd64 (x64) layout DLL
         shell: pwsh
         timeout-minutes: 5
