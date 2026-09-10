@@ -51,20 +51,22 @@ Stop it via Task Manager when you're done.
 
 ### Start automatically at login
 
-Put `altgrhook.exe` and `install-autostart.ps1` in the same folder, open
-PowerShell (don't just double-click the script - a `.ps1` window closes
-immediately on completion, which can make it look like nothing happened),
-`cd` to that folder, and run:
+Download `install-autostart.ps1` (from this repo or the
+[latest release](../../releases/latest)), open PowerShell (don't just
+double-click the script - a `.ps1` window closes immediately on
+completion, which can make it look like nothing happened), `cd` to the
+folder you put it in, and run:
 
 ```
 ./install-autostart.ps1
 ```
 
-This copies `altgrhook.exe` into your personal Startup folder
-(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) and starts it
-right away. No admin rights needed - it only touches your own per-user
-Startup folder. Re-running it after updating `altgrhook.exe` just replaces
-the copy already there, so it never leaves duplicates behind.
+This downloads the latest `altgrhook.exe` release straight from GitHub
+and installs it into your personal Startup folder
+(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`), then starts
+it right away. No admin rights needed - it only touches your own per-user
+Startup folder. Re-running it later fetches whatever is newest and
+replaces the copy already there, so it never leaves duplicates behind.
 
 ## How it works
 

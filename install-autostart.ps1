@@ -1,30 +1,40 @@
 #!/usr/bin/env pwsh
-# Copies altgrhook.exe into the current user's Startup folder so it launches
-# automatically at login. No admin rights needed - this only touches the
-# per-user Startup folder, not any system-wide location.
+# Downloads the latest altgrhook.exe release from GitHub and installs it
+# into the current user's Startup folder so it launches automatically at
+# login. No admin rights needed - this only touches the per-user Startup
+# folder, not any system-wide location.
 
 $ErrorActionPreference = "Stop"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$source = Join-Path $PSScriptRoot "altgrhook.exe"
-if (-not (Test-Path $source)) {
-    Write-Error "altgrhook.exe not found next to this script ($source). Build or download it first."
-    exit 1
-}
-
+$repo = "SpikePy/altgrhook"
 $startupDir = [Environment]::GetFolderPath("Startup")
 $destination = Join-Path $startupDir "altgrhook.exe"
 
-if ((Resolve-Path $source).Path -eq $destination) {
-    Write-Host "altgrhook.exe is already running from the Startup folder - nothing to do."
-    exit 0
+Write-Host "Checking latest release of $repo..."
+$release = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/$repo/releases/latest"
+$asset = $release.assets | Where-Object { $_.name -eq "altgrhook.exe" } | Select-Object -First 1
+if (-not $asset) {
+    Write-Error "No altgrhook.exe asset found in release $($release.tag_name)."
+    exit 1
 }
 
-# Always copy to the same fixed destination filename and overwrite in
-# place, so re-running this script (e.g. after an update) replaces the
-# existing copy instead of leaving stale/duplicate copies behind.
-Copy-Item -Path $source -Destination $destination -Force
+# Download to a temp file first so a failed/interrupted download never
+# corrupts an already-installed copy.
+$tempFile = Join-Path ([System.IO.Path]::GetTempPath()) "altgrhook-$($release.tag_name).exe"
+Write-Host "Downloading $($release.tag_name) ($($asset.browser_download_url))..."
+Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $tempFile
 
-Write-Host "Installed: $destination"
+# Stop any already-running copy so the file below isn't locked and so we
+# don't end up with two instances racing over the same hotkeys.
+Get-Process -Name "altgrhook" -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Always move to the same fixed destination filename, replacing whatever
+# is already there, so re-running this script never leaves duplicate
+# copies behind in the Startup folder.
+Move-Item -Path $tempFile -Destination $destination -Force
+
+Write-Host "Installed $($release.tag_name): $destination"
 Write-Host "altgrhook will now start automatically the next time you log in."
 Write-Host "Starting it now..."
 Start-Process -FilePath $destination
