@@ -64,6 +64,15 @@ jobs:
             ForEach-Object { $_.DirectoryName } | Select-Object -Unique |
             ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
 
+      - name: Disable ASLR for kbdutool.exe
+        shell: pwsh
+        run: |
+          # The crash is non-deterministic across identical runs with
+          # identical content, suggesting ASLR is affecting a marginal
+          # memory-corruption bug's behavior. Forcing a fixed (bottom-up,
+          # non-relocated) layout to see if it stabilizes the outcome.
+          Set-ProcessMitigation -Name kbdutool.exe -Disable ForceRelocateImages, BottomUp, HighEntropy
+
       - name: Build amd64 (x64) layout DLL
         shell: pwsh
         timeout-minutes: 5
