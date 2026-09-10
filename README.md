@@ -1,55 +1,61 @@
-# winlayout-undead
-inspired by umanovskis/win-kbd-usint-nodead and kdevo/winlayouts-undead
+# altgrhook
 
-## Building and installing
+A small background program for Windows that adds AltGr (Right Alt)
+shortcuts for accented characters - no dead keys, no installation, no
+Administrator rights needed.
 
-Pushing changes to `US-AltGr-International.klc` (or running the workflow
-manually from the Actions tab) triggers
-`.github/workflows/build-keyboard-layout.yml`, which:
+Hold the physical **Right Alt** key and press a mapped letter, digit, or
+symbol, and the accented character appears immediately - nothing waits for
+a second keystroke. It works on top of whatever keyboard layout you
+already have active.
 
-1. builds `tools/klc2c`, a small Go program that parses the `.klc` and
-   generates the keyboard layout DLL's C source into `dll/kbdusaltgr.c`/`.def` -
-   grounded in Microsoft's own `kbdus.c` reference sample and `kbd.h`'s real
-   struct layout, rather than using MSKLC's `kbdutool.exe`, which currently
-   crashes unreliably on GitHub's hosted Windows runner images;
-2. cross-compiles that generated source into real Windows PE DLLs using
-   mingw-w64 (`gcc`/`windres`) - runs entirely on a Linux runner, no Windows
-   image or MSVC needed at all;
-3. uploads an artifact named `US-AltGr-International-keyboard-layout`.
+The apostrophe (`'`) and backtick/grave (`` ` ``) keys are also always
+forced to their plain character immediately, even without AltGr - some
+built-in Windows layouts (like "United States-International") treat those
+as dead keys by default, and this overrides that regardless of which
+layout is active.
 
-`dll/` holds the C build dependencies: `kbd.h` is a minimal, self-authored
-header (not the WDK's) with just the `KBDTABLES`-family definitions the
-generated source needs, and `kbdusaltgr.rc` is its version-info resource -
-so the whole pipeline has no dependency on MSKLC, the WDK, or Windows itself
-being available anywhere in CI. The generated `kbdusaltgr.c`/`.def` land in
-`dll/` too (gitignored) so `#include "kbd.h"` resolves locally without any
-extra include path.
+| Key | AltGr | Shift+AltGr | | Key | AltGr | Shift+AltGr |
+|-----|-------|-------------|-|-----|-------|-------------|
+| 1   | ¡     | ¹           | | Q   | ä     | Ä           |
+| 2   | ²     | ²           | | W   | å     | Å           |
+| 3   | ³     | ³           | | E   | é     | É           |
+| 4   | ¤     | £           | | R   | ®     | ®           |
+| 5   | €     | €           | | T   | þ     | Þ           |
+| 6   | ¼     | ¼           | | Y   | ü     | Ü           |
+| 7   | ½     | ½           | | U   | ú     | Ú           |
+| 8   | ¾     | ¾           | | I   | í     | Í           |
+| 9   | '     | '           | | O   | ó     | Ó           |
+| 0   | '     | '           | | P   | ö     | Ö           |
+| -   | ¥     | ¥           | | [   | «     | «           |
+| =   | ×     | ÷           | | ]   | »     | »           |
+| A   | á     | Á           | | Z   | æ     | Æ           |
+| S   | ß     | §           | | C   | ©     | ¢           |
+| D   | ð     | Ð           | | N   | ñ     | Ñ           |
+| L   | ø     | Ø           | | M   | µ     | µ           |
+| ;   | ¶     | °           | | ,   | ç     | Ç           |
+| '   | ´     | ¨           | | /   | ¿     | ¿           |
+| \\  | ¬     | ¦           |
 
-The artifact contains:
+## Get it
 
-- the compiled 64-bit and 32-bit layout DLLs
-- `install-layout.ps1` / `uninstall-layout.ps1`
-- a copy of the source `.klc`
+Download `altgrhook.exe` from the latest successful run of
+[Build AltGr background helper](../../actions/workflows/build-altgrhook.yml)
+(the `AltGr-background-helper` artifact), or build it yourself:
 
-To install on Windows 11: download and unzip the artifact, then run
-`install-layout.ps1` from an elevated (Run as Administrator) PowerShell prompt.
-Sign out and back in, then add the keyboard under Settings > Time & Language >
-Language & region > English (United States) > Language options > Add a keyboard.
+```
+go build -ldflags="-H=windowsgui" -o altgrhook.exe .
+```
 
-## No Administrator rights?
+Then just double-click `altgrhook.exe` - no installer, no console window.
+Stop it via Task Manager when you're done. To have it start automatically
+at login, put a shortcut to it in your Startup folder (`Win+R` ->
+`shell:startup`; no admin rights needed for this either).
 
-A real keyboard layout DLL has to live in `System32` and the registry, both
-of which require admin. `tools/altgrhook` is a small, pure-Go background
-program (no admin needed) implementing the same "AltGr for accented
-characters, no dead keys" behavior on top of whatever layout is already
-active: hold the physical Right Alt key and press a mapped letter/digit/
-symbol and the character appears immediately. It uses a low-level keyboard
-hook (`WH_KEYBOARD_LL`) to intercept just those key combinations and
-`SendInput` to inject the Unicode character.
+## How it works
 
-`.github/workflows/build-altgrhook.yml` cross-compiles it (plain `go build`,
-`GOOS=windows`, no cgo) and uploads it as the `AltGr-background-helper`
-artifact. Download `altgrhook.exe` and just run it - no installation, no
-console window. Stop it via Task Manager when you're done, or add a
-shortcut to it in your Startup folder (`Win+R` -> `shell:startup`, no admin
-needed) to have it start automatically at login.
+A low-level keyboard hook (`WH_KEYBOARD_LL`) watches for the Right Alt key
+held together with one of the mapped keys; when it sees that combination it
+swallows the keystroke and injects the target Unicode character via
+`SendInput` instead. Every other key press passes through untouched. It's
+pure Go (no cgo), so it cross-compiles to Windows trivially from any OS.

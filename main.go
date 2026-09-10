@@ -5,10 +5,8 @@
 // key and press a mapped letter/digit/symbol to get the accented character
 // immediately (no dead keys - nothing waits for a second keystroke).
 //
-// It implements the same "US International - AltGr - No Dead Keys"
-// character set as this repository's real keyboard layout DLL
-// (see ../klc2c and US-AltGr-International.klc), for anyone who can't
-// install that DLL because they don't have Administrator rights.
+// It implements a "US International - AltGr - No Dead Keys" character set:
+// AltGr+letter/digit/symbol produces the accented character directly.
 //
 // Technique: a low-level keyboard hook (WH_KEYBOARD_LL) watches for the
 // Right Alt key plus a mapped key; when both are held, it swallows that
@@ -41,6 +39,7 @@ const (
 	// keys (letters and digits use their own ASCII codes as VK codes).
 	vkOemMinus = 0xBD // -
 	vkOemPlus  = 0xBB // =
+	vkOem3     = 0xC0 // ` (grave/backtick)
 	vkOem4     = 0xDB // [
 	vkOem6     = 0xDD // ]
 	vkOem1     = 0xBA // ;
@@ -49,6 +48,17 @@ const (
 	vkOemComma = 0xBC // ,
 	vkOem2     = 0xBF // /
 )
+
+// undeadMap covers keys that are dead keys under some active Windows
+// layouts (notably the built-in "United States-International") even
+// without AltGr - e.g. apostrophe and backtick normally wait for a second
+// keystroke to combine into an accented letter. These are always forced to
+// produce their plain character immediately, regardless of AltGr state,
+// bypassing whatever the active layout would otherwise do.
+var undeadMap = map[uint32][2]rune{
+	vkOem7: {'\'', '"'},
+	vkOem3: {'`', '~'},
+}
 
 // altGrMap maps a virtual-key code to its {base, Shift+AltGr} characters.
 var altGrMap = map[uint32][2]rune{
@@ -162,6 +172,7 @@ func hookProc(nCode int32, wParam, lParam uintptr) uintptr {
 			mu.Lock()
 			down := raltDown
 			mu.Unlock()
+
 			if down {
 				if chars, ok := altGrMap[vk]; ok {
 					if wParam == wmKeyDown || wParam == wmSysKeyDown {
@@ -172,6 +183,17 @@ func hookProc(nCode int32, wParam, lParam uintptr) uintptr {
 					// sees the raw, unmapped key.
 					return 1
 				}
+			}
+
+			// Not an AltGr combo (or AltGr isn't held): still force
+			// undead keys to their plain character immediately, whether
+			// or not the active layout would otherwise treat them as
+			// dead keys.
+			if chars, ok := undeadMap[vk]; ok {
+				if wParam == wmKeyDown || wParam == wmSysKeyDown {
+					sendUnicodeChar(pickChar(chars))
+				}
+				return 1
 			}
 		}
 	}
