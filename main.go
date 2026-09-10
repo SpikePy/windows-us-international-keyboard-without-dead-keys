@@ -64,6 +64,7 @@ const (
 	wmRButtonUp = 0x0205
 
 	nimAdd    = 0x00000000
+	nimModify = 0x00000001
 	nimDelete = 0x00000002
 
 	nifMessage = 0x00000001
@@ -81,7 +82,8 @@ const (
 	cmdDisable = 2
 	cmdExit    = 3
 
-	trayIconResourceID = 1 // matches "1 ICON ..." in rsrc.rc
+	trayIconResourceID         = 1 // matches "1 ICON ..." in rsrc.rc
+	trayIconDisabledResourceID = 2 // matches "2 ICON ..." in rsrc.rc
 )
 
 // usInternationalKLID is the 8-hex-digit keyboard layout identifier for
@@ -257,6 +259,9 @@ var (
 	layoutIsUSIntl bool
 
 	enabled atomic.Bool
+
+	hIconEnabled  uintptr
+	hIconDisabled uintptr
 )
 
 // isUSInternationalActive reports whether the keyboard layout of the
@@ -355,7 +360,9 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	switch message {
 	case wmTrayIcon:
 		switch lParam {
-		case wmLButtonUp, wmRButtonUp:
+		case wmLButtonUp:
+			setEnabled(hwnd, !enabled.Load())
+		case wmRButtonUp:
 			showTrayMenu(hwnd)
 		}
 		return 0
@@ -404,9 +411,9 @@ func showTrayMenu(hwnd uintptr) {
 
 	switch cmd {
 	case cmdEnable:
-		enabled.Store(true)
+		setEnabled(hwnd, true)
 	case cmdDisable:
-		enabled.Store(false)
+		setEnabled(hwnd, false)
 	case cmdExit:
 		removeTrayIcon(hwnd)
 		procPostQuitMessage.Call(0)
@@ -416,6 +423,28 @@ func showTrayMenu(hwnd uintptr) {
 func appendMenuItem(hMenu uintptr, flags uintptr, id int, text string) {
 	textPtr, _ := syscall.UTF16PtrFromString(text)
 	procAppendMenuW.Call(hMenu, flags, uintptr(id), uintptr(unsafe.Pointer(textPtr)))
+}
+
+// setEnabled updates the enabled flag that hookProc checks and swaps the
+// tray icon to match - the normal icon while enabled, a color-inverted
+// version while disabled.
+func setEnabled(hwnd uintptr, value bool) {
+	enabled.Store(value)
+	updateTrayIcon(hwnd)
+}
+
+func updateTrayIcon(hwnd uintptr) {
+	hIcon := hIconEnabled
+	if !enabled.Load() {
+		hIcon = hIconDisabled
+	}
+	var nid notifyIconDataW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = hwnd
+	nid.UID = 1
+	nid.UFlags = nifIcon
+	nid.HIcon = hIcon
+	procShellNotifyIconW.Call(nimModify, uintptr(unsafe.Pointer(&nid)))
 }
 
 func addTrayIcon(hwnd, hIcon uintptr) {
@@ -504,8 +533,9 @@ func main() {
 		return
 	}
 
-	hIcon, _, _ := procLoadIconW.Call(hInstance, trayIconResourceID)
-	addTrayIcon(hwnd, hIcon)
+	hIconEnabled, _, _ = procLoadIconW.Call(hInstance, trayIconResourceID)
+	hIconDisabled, _, _ = procLoadIconW.Call(hInstance, trayIconDisabledResourceID)
+	addTrayIcon(hwnd, hIconEnabled)
 	defer removeTrayIcon(hwnd)
 
 	hook, _, _ := procSetWindowsHookExW.Call(

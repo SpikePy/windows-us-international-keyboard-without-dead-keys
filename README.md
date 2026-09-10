@@ -29,9 +29,10 @@ go build -buildvcs=false -ldflags="-H=windowsgui" -o us-international-without-de
 ```
 
 Double-click the exe - no installer, no console window. It shows an icon
-in the notification area; click it for a menu to Enable, Disable
-(pauses the AltGr/undead-key behavior above without closing the
-program), or Exit.
+in the notification area: left-click toggles it on/off (pausing the
+AltGr/undead-key behavior above without closing the program - the icon
+inverts while off), right-click opens a menu with Enable, Disable, and
+Exit.
 
 ## How it works
 
