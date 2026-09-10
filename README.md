@@ -47,9 +47,24 @@ go build -buildvcs=false -ldflags="-H=windowsgui" -o altgrhook.exe .
 ```
 
 Then just double-click `altgrhook.exe` - no installer, no console window.
-Stop it via Task Manager when you're done. To have it start automatically
-at login, put a shortcut to it in your Startup folder (`Win+R` ->
-`shell:startup`; no admin rights needed for this either).
+Stop it via Task Manager when you're done.
+
+### Start automatically at login
+
+Put `altgrhook.exe` and `install-autostart.ps1` in the same folder, open
+PowerShell (don't just double-click the script - a `.ps1` window closes
+immediately on completion, which can make it look like nothing happened),
+`cd` to that folder, and run:
+
+```
+./install-autostart.ps1
+```
+
+This copies `altgrhook.exe` into your personal Startup folder
+(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`) and starts it
+right away. No admin rights needed - it only touches your own per-user
+Startup folder. Re-running it after updating `altgrhook.exe` just replaces
+the copy already there, so it never leaves duplicates behind.
 
 ## How it works
 
