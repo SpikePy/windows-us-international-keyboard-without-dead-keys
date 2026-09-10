@@ -77,17 +77,30 @@ jobs:
         shell: pwsh
         timeout-minutes: 5
         run: |
+          # kbdutool.exe exhibits non-deterministic STATUS_STACK_BUFFER_OVERRUN
+          # crashes across otherwise-identical runs (same binary, same input) -
+          # retrying a few times works around it.
           $work = "C:\build_amd64"
           New-Item -ItemType Directory -Path $work | Out-Null
           Copy-Item $env:KLC_FILE $work
           Push-Location $work
-          & $env:KBDUTOOL -u -m $env:KLC_FILE
-          $exitCode = $LASTEXITCODE
+          $success = $false
+          for ($attempt = 1; $attempt -le 20; $attempt++) {
+            & $env:KBDUTOOL -u -m $env:KLC_FILE
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0 -and (Get-ChildItem -Filter *.dll)) {
+              Write-Host "amd64 build succeeded on attempt $attempt"
+              $success = $true
+              break
+            }
+            Write-Host "amd64 build attempt $attempt failed, exit code $exitCode"
+            Get-ChildItem | Remove-Item -Force -ErrorAction SilentlyContinue
+            Copy-Item "$env:GITHUB_WORKSPACE\$env:KLC_FILE" .
+          }
           Pop-Location
           Write-Host "---- amd64 build output ----"
           Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if ($exitCode -ne 0) { throw "kbdutool failed (amd64), exit code $exitCode" }
-          if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No amd64 .dll produced" }
+          if (-not $success) { throw "kbdutool failed (amd64) after 20 attempts" }
 
       - name: Build x86 layout DLL
         shell: pwsh
@@ -97,13 +110,23 @@ jobs:
           New-Item -ItemType Directory -Path $work | Out-Null
           Copy-Item $env:KLC_FILE $work
           Push-Location $work
-          & $env:KBDUTOOL -u -x $env:KLC_FILE
-          $exitCode = $LASTEXITCODE
+          $success = $false
+          for ($attempt = 1; $attempt -le 20; $attempt++) {
+            & $env:KBDUTOOL -u -x $env:KLC_FILE
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -eq 0 -and (Get-ChildItem -Filter *.dll)) {
+              Write-Host "x86 build succeeded on attempt $attempt"
+              $success = $true
+              break
+            }
+            Write-Host "x86 build attempt $attempt failed, exit code $exitCode"
+            Get-ChildItem | Remove-Item -Force -ErrorAction SilentlyContinue
+            Copy-Item "$env:GITHUB_WORKSPACE\$env:KLC_FILE" .
+          }
           Pop-Location
           Write-Host "---- x86 build output ----"
           Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-          if ($exitCode -ne 0) { throw "kbdutool failed (x86), exit code $exitCode" }
-          if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No x86 .dll produced" }
+          if (-not $success) { throw "kbdutool failed (x86) after 20 attempts" }
 
       - name: Package installable layout
         shell: pwsh
