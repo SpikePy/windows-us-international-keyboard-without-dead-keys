@@ -7,7 +7,7 @@
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$exeName = "windows-us-international-keyboard-without-dead-keys.exe"
+$exeName = "us-international-without-dead-keys.exe"
 $repo = "SpikePy/windows-us-international-keyboard-without-dead-keys"
 $startupDir = [Environment]::GetFolderPath("Startup")
 $destination = Join-Path $startupDir $exeName

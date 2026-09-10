@@ -27,10 +27,10 @@ jobs:
         env:
           GOOS: windows
           GOARCH: amd64
-        run: go build -buildvcs=false -ldflags="-H=windowsgui" -o windows-us-international-keyboard-without-dead-keys.exe .
+        run: go build -buildvcs=false -ldflags="-H=windowsgui" -o us-international-without-dead-keys.exe .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: windows-us-international-keyboard-without-dead-keys
-          path: windows-us-international-keyboard-without-dead-keys.exe
+          name: us-international-without-dead-keys
+          path: us-international-without-dead-keys.exe

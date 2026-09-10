@@ -38,7 +38,7 @@ instead of the dead-key wait that layout normally uses.
 ## Build
 
 ```
-go build -buildvcs=false -ldflags="-H=windowsgui" -o windows-us-international-keyboard-without-dead-keys.exe .
+go build -buildvcs=false -ldflags="-H=windowsgui" -o us-international-without-dead-keys.exe .
 ```
 
 Double-click the exe - no installer, no console window. Stop it via Task
