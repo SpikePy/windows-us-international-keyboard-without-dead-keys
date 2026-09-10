@@ -4,17 +4,14 @@ A small background program for Windows that adds AltGr (Right Alt)
 shortcuts for accented characters - no dead keys, no installation, no
 Administrator rights needed.
 
-Hold the physical **Right Alt** key and press a mapped letter, digit, or
-symbol, and the accented character appears immediately - nothing waits for
-a second keystroke.
+Hold **Right Alt** and press a mapped key to get the accented character
+immediately - nothing waits for a second keystroke.
 
-**This only activates while the active Windows keyboard layout is
-"United States-International"** - switch to German, plain US, or any
-other layout and this program does nothing, leaving normal typing
-completely untouched. Under that layout, the apostrophe (`'`),
-backtick/grave (`` ` ``/`~`), and `6`/`^` keys are also always forced to
-their plain character immediately instead of the dead-key wait that
-layout would normally use.
+**Only active while the Windows keyboard layout is
+"United States-International"** - any other layout (German, plain US,
+...) and this does nothing. Under that layout, `'`, `` ` ``/`~`, and
+`6`/`^` are also always forced to their plain character immediately
+instead of the dead-key wait that layout normally uses.
 
 | Key | AltGr | Shift+AltGr | | Key | AltGr | Shift+AltGr |
 |-----|-------|-------------|-|-----|-------|-------------|
@@ -38,44 +35,29 @@ layout would normally use.
 | '   | ´     | ¨           | | /   | ¿     | ¿           |
 | \\  | ¬     | ¦           |
 
-## Get it
-
-Download `windows-us-international-keyboard-without-dead-keys.exe` from the
-[latest release](../../releases/latest), or build it yourself:
+## Build
 
 ```
 go build -buildvcs=false -ldflags="-H=windowsgui" -o windows-us-international-keyboard-without-dead-keys.exe .
 ```
 
-Then just double-click the exe - no installer, no console window. Stop it
-via Task Manager when you're done.
+Double-click the exe - no installer, no console window. Stop it via Task
+Manager when done.
 
 ### Start automatically at login
 
-Download `install-autostart.ps1` (from this repo or the
-[latest release](../../releases/latest)), open PowerShell (don't just
-double-click the script - a `.ps1` window closes immediately on
-completion, which can make it look like nothing happened), `cd` to the
-folder you put it in, and run:
-
-```
-./install-autostart.ps1
-```
-
-This downloads the latest release exe straight from GitHub and installs
-it into your personal Startup folder
-(`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`), then starts
-it right away. No admin rights needed - it only touches your own per-user
-Startup folder. Re-running it later fetches whatever is newest and
-replaces the copy already there, so it never leaves duplicates behind.
+Run `install-autostart.ps1` from an open PowerShell window (don't
+double-click it - the window closes immediately on completion). It
+downloads the latest release exe and copies it into your personal
+Startup folder (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`),
+then starts it. No admin rights needed; re-running it just replaces the
+existing copy, so it never leaves duplicates behind.
 
 ## How it works
 
-A low-level keyboard hook (`WH_KEYBOARD_LL`) watches for the Right Alt key
-held together with one of the mapped keys; when it sees that combination,
-and the focused window's active keyboard layout is
-"United States-International" (checked via `GetKeyboardLayoutNameW`), it
-swallows the keystroke and injects the target Unicode character via
-`SendInput` instead. Every other key press, and everything while any other
-layout is active, passes through untouched. It's pure Go (no cgo), so it
-cross-compiles to Windows trivially from any OS.
+A low-level keyboard hook (`WH_KEYBOARD_LL`) watches for Right Alt plus a
+mapped key while the focused window's layout is
+"United States-International" (checked via `GetKeyboardLayoutNameW`), and
+injects the target Unicode character via `SendInput` instead. Everything
+else passes through untouched. Pure Go (no cgo), so it cross-compiles to
+Windows trivially from any OS.
