@@ -6,6 +6,7 @@ on:
       - "kbdusaltgr.c"
       - "kbdusaltgr.def"
       - "kbdusaltgr.rc"
+      - "kbd.h"
       - ".github/workflows/build-keyboard-layout.yml"
   workflow_dispatch: {}
 
@@ -15,56 +16,15 @@ jobs:
     # STATUS_STACK_BUFFER_OVERRUN on GitHub's current hosted Windows runner
     # images, regardless of .klc content - confirmed via runner-image-version
     # comparison to be an environment regression, not a content issue. We
-    # bypass kbdutool.exe entirely: kbdusaltgr.c is a hand-written keyboard
-    # layout source (based on Microsoft's own kbdus.c reference sample) that
-    # we compile directly with cl.exe/link.exe, which have been reliable
-    # throughout. Only kbd.h is still sourced from MSKLC (its extraction via
-    # msiexec has never crashed - only executing kbdutool.exe itself does).
+    # bypass it (and MSKLC's installer download) entirely: kbdusaltgr.c is a
+    # hand-written keyboard layout source (based on Microsoft's own kbdus.c
+    # reference sample) and kbd.h is a minimal, self-authored header with
+    # just the KBDTABLES-family definitions it needs, both compiled directly
+    # with cl.exe/link.exe.
     runs-on: windows-2022
-    env:
-      MSKLC_URL: https://download.microsoft.com/download/6/f/5/6f5ce43a-e892-4fd1-b9a6-1a0cbb64e6e2/MSKLC.exe
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-
-      - name: Download MSKLC (for its bundled kbd.h header)
-        shell: pwsh
-        run: Invoke-WebRequest -Uri $env:MSKLC_URL -OutFile MSKLC.exe
-
-      - name: Extract MSKLC (pull kbd.h out of the installer, no GUI install needed)
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          $sevenZip = "C:\Program Files\7-Zip\7z.exe"
-
-          # MSKLC.exe is a self-extracting bootstrapper wrapping an .msi.
-          & $sevenZip x "MSKLC.exe" -oC:\msklc_stage1 -y | Out-Null
-
-          $candidates = Get-ChildItem -Path C:\msklc_stage1 -Recurse -Filter *.msi
-          if (-not $candidates) { throw "No .msi found inside MSKLC.exe" }
-
-          $msi = $candidates | Where-Object { $_.Name -match "(?i)msklc|keyboard" } | Select-Object -First 1
-          if (-not $msi) { $msi = $candidates | Select-Object -First 1 }
-          Write-Host "Using MSI: $($msi.FullName)"
-
-          # Use msiexec's administrative install to lay out the MSI's files.
-          # (7-Zip can parse MSI tables too, but chokes on the embedded Icon
-          # stream and hangs trying to open it as a nested PE archive.)
-          $proc = Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=C:\msklc" -Wait -PassThru
-          if ($proc.ExitCode -ne 0) { throw "msiexec admin install failed with exit code $($proc.ExitCode)" }
-
-      - name: Locate and stage kbd.h
-        shell: pwsh
-        run: |
-          $header = Get-ChildItem -Path C:\msklc -Recurse -Filter kbd.h | Select-Object -First 1
-          if (-not $header) { throw "kbd.h not found after extracting MSKLC" }
-          Write-Host "kbd.h: $($header.FullName)"
-          # Copy just this one header next to our source so #include "kbd.h"
-          # resolves via the local quoted-include lookup. Adding MSKLC's whole
-          # "inc" folder as a compiler -I search path instead shadows the
-          # modern Windows SDK's own dde.h/ddeml.h with MSKLC's ancient
-          # bundled copies, breaking <windows.h> with cascading syntax errors.
-          Copy-Item $header.FullName .
 
       - name: Set up MSVC (amd64)
         uses: ilammy/msvc-dev-cmd@v1
