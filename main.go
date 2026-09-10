@@ -1,4 +1,5 @@
-// Command altgrhook is a small background program for Windows that adds
+// Command windows-us-international-keyboard-without-dead-keys is a small
+// background program for Windows that adds
 // AltGr (Right Alt) shortcuts for accented characters, without installing
 // anything system-wide - no admin rights needed. Hold the physical Right
 // Alt key and press a mapped letter/digit/symbol to get the accented

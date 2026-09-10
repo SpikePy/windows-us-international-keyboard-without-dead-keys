@@ -1,4 +1,4 @@
-# altgrhook
+# windows-us-international-keyboard-without-dead-keys
 
 A small background program for Windows that adds AltGr (Right Alt)
 shortcuts for accented characters - no dead keys, no installation, no
@@ -10,11 +10,11 @@ a second keystroke.
 
 **This only activates while the active Windows keyboard layout is
 "United States-International"** - switch to German, plain US, or any
-other layout and altgrhook does nothing, leaving normal typing completely
-untouched. Under that layout, the apostrophe (`'`), backtick/grave
-(`` ` ``/`~`), and `6`/`^` keys are also always forced to their plain
-character immediately instead of the dead-key wait that layout would
-normally use.
+other layout and this program does nothing, leaving normal typing
+completely untouched. Under that layout, the apostrophe (`'`),
+backtick/grave (`` ` ``/`~`), and `6`/`^` keys are also always forced to
+their plain character immediately instead of the dead-key wait that
+layout would normally use.
 
 | Key | AltGr | Shift+AltGr | | Key | AltGr | Shift+AltGr |
 |-----|-------|-------------|-|-----|-------|-------------|
@@ -40,15 +40,15 @@ normally use.
 
 ## Get it
 
-Download `altgrhook.exe` from the
+Download `windows-us-international-keyboard-without-dead-keys.exe` from the
 [latest release](../../releases/latest), or build it yourself:
 
 ```
-go build -buildvcs=false -ldflags="-H=windowsgui" -o altgrhook.exe .
+go build -buildvcs=false -ldflags="-H=windowsgui" -o windows-us-international-keyboard-without-dead-keys.exe .
 ```
 
-Then just double-click `altgrhook.exe` - no installer, no console window.
-Stop it via Task Manager when you're done.
+Then just double-click the exe - no installer, no console window. Stop it
+via Task Manager when you're done.
 
 ### Start automatically at login
 
@@ -62,8 +62,8 @@ folder you put it in, and run:
 ./install-autostart.ps1
 ```
 
-This downloads the latest `altgrhook.exe` release straight from GitHub
-and installs it into your personal Startup folder
+This downloads the latest release exe straight from GitHub and installs
+it into your personal Startup folder
 (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`), then starts
 it right away. No admin rights needed - it only touches your own per-user
 Startup folder. Re-running it later fetches whatever is newest and

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Regenerates altgrhook.ico. Requires Pillow (pip install Pillow) and a
+"""Regenerates windows-us-international-keyboard-without-dead-keys.ico. Requires Pillow (pip install Pillow) and a
 DejaVu Sans Bold font (fonts-dejavu-core on Debian/Ubuntu). After running
 this, recompile the resource with:
 
-    x86_64-w64-mingw32-windres -O coff -o altgrhook_windows_amd64.syso rsrc.rc
+    x86_64-w64-mingw32-windres -O coff -o windows-us-international-keyboard-without-dead-keys_windows_amd64.syso rsrc.rc
 """
 from PIL import Image, ImageDraw, ImageFont
 
@@ -44,5 +44,5 @@ if __name__ == "__main__":
     sizes = [16, 24, 32, 48, 64, 128, 256]
     base = draw_key(256)
     imgs = [base.resize((s, s), Image.LANCZOS) if s != 256 else base for s in sizes]
-    imgs[0].save("altgrhook.ico", format="ICO", sizes=[(s, s) for s in sizes], append_images=imgs[1:])
-    print("wrote altgrhook.ico")
+    imgs[0].save("windows-us-international-keyboard-without-dead-keys.ico", format="ICO", sizes=[(s, s) for s in sizes], append_images=imgs[1:])
+    print("wrote windows-us-international-keyboard-without-dead-keys.ico")

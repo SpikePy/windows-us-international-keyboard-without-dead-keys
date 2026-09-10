@@ -1,4 +1,4 @@
-name: Build AltGr background helper
+name: Build
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - "*.go"
       - "go.mod"
       - "*.syso"
-      - ".github/workflows/build-altgrhook.yml"
+      - ".github/workflows/build.yml"
   workflow_dispatch: {}
 
 jobs:
@@ -23,14 +23,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Build altgrhook.exe
+      - name: Build
         env:
           GOOS: windows
           GOARCH: amd64
-        run: go build -buildvcs=false -ldflags="-H=windowsgui" -o altgrhook.exe .
+        run: go build -buildvcs=false -ldflags="-H=windowsgui" -o windows-us-international-keyboard-without-dead-keys.exe .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: AltGr-background-helper
-          path: altgrhook.exe
+          name: windows-us-international-keyboard-without-dead-keys
+          path: windows-us-international-keyboard-without-dead-keys.exe
