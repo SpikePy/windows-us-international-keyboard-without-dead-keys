@@ -17,11 +17,16 @@
 // Right Alt key plus a mapped key; when both are held, it swallows that
 // keystroke and injects the target Unicode character via SendInput
 // instead. Everything else passes through untouched.
+//
+// A notification-area (system tray) icon offers Enable, Disable, and
+// Exit. Disable pauses the interception above without ending the
+// process; Enable resumes it exactly as before.
 package main
 
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 )
@@ -53,6 +58,31 @@ const (
 	vkOem5     = 0xDC // backslash
 	vkOemComma = 0xBC // ,
 	vkOem2     = 0xBF // /
+
+	wmTrayIcon  = 0x8001 // WM_APP + 1
+	wmCommand   = 0x0111
+	wmLButtonUp = 0x0202
+	wmRButtonUp = 0x0205
+
+	nimAdd    = 0x00000000
+	nimDelete = 0x00000002
+
+	nifMessage = 0x00000001
+	nifIcon    = 0x00000002
+	nifTip     = 0x00000004
+
+	mfString    = 0x00000000
+	mfGrayed    = 0x00000001
+	mfSeparator = 0x00000800
+
+	tpmRightButton = 0x0002
+	tpmReturnCmd   = 0x0100
+
+	cmdEnable  = 1
+	cmdDisable = 2
+	cmdExit    = 3
+
+	trayIconResourceID = 1 // matches "1 ICON ..." in rsrc.rc
 )
 
 // usInternationalKLID is the 8-hex-digit keyboard layout identifier for
@@ -145,12 +175,51 @@ type msg struct {
 	WParam  uintptr
 	LParam  uintptr
 	Time    uint32
-	Pt      struct{ X, Y int32 }
+	Pt      point
+}
+
+type point struct {
+	X, Y int32
+}
+
+type wndClassExW struct {
+	CbSize        uint32
+	Style         uint32
+	LpfnWndProc   uintptr
+	CbClsExtra    int32
+	CbWndExtra    int32
+	HInstance     uintptr
+	HIcon         uintptr
+	HCursor       uintptr
+	HbrBackground uintptr
+	LpszMenuName  *uint16
+	LpszClassName *uint16
+	HIconSm       uintptr
+}
+
+// notifyIconDataW mirrors the Win32 NOTIFYICONDATAW structure.
+type notifyIconDataW struct {
+	CbSize           uint32
+	HWnd             uintptr
+	UID              uint32
+	UFlags           uint32
+	UCallbackMessage uint32
+	HIcon            uintptr
+	SzTip            [128]uint16
+	DwState          uint32
+	DwStateMask      uint32
+	SzInfo           [256]uint16
+	UVersion         uint32
+	SzInfoTitle      [64]uint16
+	DwInfoFlags      uint32
+	GuidItem         [16]byte
+	HBalloonIcon     uintptr
 }
 
 var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	shell32  = syscall.NewLazyDLL("shell32.dll")
 
 	procSetWindowsHookExW    = user32.NewProc("SetWindowsHookExW")
 	procCallNextHookEx       = user32.NewProc("CallNextHookEx")
@@ -168,6 +237,18 @@ var (
 	procGetCurrentThreadId   = kernel32.NewProc("GetCurrentThreadId")
 	procCreateMutexW         = kernel32.NewProc("CreateMutexW")
 	procCloseHandle          = kernel32.NewProc("CloseHandle")
+	procRegisterClassExW     = user32.NewProc("RegisterClassExW")
+	procCreateWindowExW      = user32.NewProc("CreateWindowExW")
+	procDefWindowProcW       = user32.NewProc("DefWindowProcW")
+	procLoadIconW            = user32.NewProc("LoadIconW")
+	procPostQuitMessage      = user32.NewProc("PostQuitMessage")
+	procCreatePopupMenu      = user32.NewProc("CreatePopupMenu")
+	procAppendMenuW          = user32.NewProc("AppendMenuW")
+	procTrackPopupMenu       = user32.NewProc("TrackPopupMenu")
+	procDestroyMenu          = user32.NewProc("DestroyMenu")
+	procGetCursorPos         = user32.NewProc("GetCursorPos")
+	procSetForegroundWindow  = user32.NewProc("SetForegroundWindow")
+	procShellNotifyIconW     = shell32.NewProc("Shell_NotifyIconW")
 
 	mu       sync.Mutex
 	raltDown bool
@@ -175,6 +256,8 @@ var (
 	layoutMu       sync.Mutex
 	layoutHwnd     uintptr
 	layoutIsUSIntl bool
+
+	enabled atomic.Bool
 )
 
 // isUSInternationalActive reports whether the keyboard layout of the
@@ -235,7 +318,7 @@ func hookProc(nCode int32, wParam, lParam uintptr) uintptr {
 				raltDown = false
 			}
 			mu.Unlock()
-		} else if isUSInternationalActive() {
+		} else if enabled.Load() && isUSInternationalActive() {
 			mu.Lock()
 			down := raltDown
 			mu.Unlock()
@@ -265,6 +348,94 @@ func hookProc(nCode int32, wParam, lParam uintptr) uintptr {
 	}
 	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
 	return ret
+}
+
+const trayClassName = "USInternationalWithoutDeadKeysTrayClass"
+
+func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
+	switch message {
+	case wmTrayIcon:
+		switch lParam {
+		case wmLButtonUp, wmRButtonUp:
+			showTrayMenu(hwnd)
+		}
+		return 0
+	case wmCommand:
+		switch uint32(wParam) & 0xffff {
+		case cmdEnable:
+			enabled.Store(true)
+		case cmdDisable:
+			enabled.Store(false)
+		case cmdExit:
+			removeTrayIcon(hwnd)
+			procPostQuitMessage.Call(0)
+		}
+		return 0
+	}
+	ret, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
+	return ret
+}
+
+func showTrayMenu(hwnd uintptr) {
+	hMenu, _, _ := procCreatePopupMenu.Call()
+	if hMenu == 0 {
+		return
+	}
+	defer procDestroyMenu.Call(hMenu)
+
+	enableFlags := uintptr(mfString)
+	disableFlags := uintptr(mfString)
+	if enabled.Load() {
+		enableFlags |= mfGrayed
+	} else {
+		disableFlags |= mfGrayed
+	}
+	appendMenuItem(hMenu, enableFlags, cmdEnable, "Enable")
+	appendMenuItem(hMenu, disableFlags, cmdDisable, "Disable")
+	procAppendMenuW.Call(hMenu, mfSeparator, 0, 0)
+	appendMenuItem(hMenu, mfString, cmdExit, "Exit")
+
+	var pt point
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+
+	// Required so the menu closes properly when it loses focus.
+	procSetForegroundWindow.Call(hwnd)
+
+	procTrackPopupMenu.Call(
+		hMenu,
+		tpmReturnCmd|tpmRightButton,
+		uintptr(pt.X),
+		uintptr(pt.Y),
+		0,
+		hwnd,
+		0,
+	)
+}
+
+func appendMenuItem(hMenu uintptr, flags uintptr, id int, text string) {
+	textPtr, _ := syscall.UTF16PtrFromString(text)
+	procAppendMenuW.Call(hMenu, flags, uintptr(id), uintptr(unsafe.Pointer(textPtr)))
+}
+
+func addTrayIcon(hwnd, hIcon uintptr) {
+	var nid notifyIconDataW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = hwnd
+	nid.UID = 1
+	nid.UFlags = nifMessage | nifIcon | nifTip
+	nid.UCallbackMessage = wmTrayIcon
+	nid.HIcon = hIcon
+	tip, _ := syscall.UTF16FromString("US-International (no dead keys)")
+	copy(nid.SzTip[:], tip)
+	procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
+}
+
+func removeTrayIcon(hwnd uintptr) {
+	var nid notifyIconDataW
+	nid.CbSize = uint32(unsafe.Sizeof(nid))
+	nid.HWnd = hwnd
+	nid.UID = 1
+	procShellNotifyIconW.Call(nimDelete, uintptr(unsafe.Pointer(&nid)))
 }
 
 func pickChar(chars [2]rune) rune {
@@ -304,7 +475,37 @@ func main() {
 		return
 	}
 
+	enabled.Store(true)
+
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
+
+	className, _ := syscall.UTF16PtrFromString(trayClassName)
+	windowName, _ := syscall.UTF16PtrFromString(trayClassName)
+	wc := wndClassExW{
+		LpfnWndProc:   syscall.NewCallback(wndProc),
+		HInstance:     hInstance,
+		LpszClassName: className,
+	}
+	wc.CbSize = uint32(unsafe.Sizeof(wc))
+	procRegisterClassExW.Call(uintptr(unsafe.Pointer(&wc)))
+
+	hwnd, _, _ := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(className)),
+		uintptr(unsafe.Pointer(windowName)),
+		0,
+		0, 0, 0, 0,
+		0, 0,
+		hInstance,
+		0,
+	)
+	if hwnd == 0 {
+		return
+	}
+
+	hIcon, _, _ := procLoadIconW.Call(hInstance, trayIconResourceID)
+	addTrayIcon(hwnd, hIcon)
+	defer removeTrayIcon(hwnd)
 
 	hook, _, _ := procSetWindowsHookExW.Call(
 		uintptr(whKeyboardLL),

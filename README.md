@@ -33,8 +33,10 @@ Startup.
 go build -buildvcs=false -ldflags="-H=windowsgui" -o us-international-without-dead-keys.exe .
 ```
 
-Double-click the exe - no installer, no console window. Stop it via Task
-Manager when done.
+Double-click the exe - no installer, no console window. It shows an icon
+in the notification area; click it for a menu to Enable, Disable
+(pauses the AltGr/undead-key behavior above without closing the
+program), or Exit.
 
 ## How it works
 
