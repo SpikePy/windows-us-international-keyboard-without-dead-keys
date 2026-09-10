@@ -166,6 +166,8 @@ var (
 	procAttachThreadInput    = user32.NewProc("AttachThreadInput")
 	procGetKeyboardLayoutNam = user32.NewProc("GetKeyboardLayoutNameW")
 	procGetCurrentThreadId   = kernel32.NewProc("GetCurrentThreadId")
+	procCreateMutexW         = kernel32.NewProc("CreateMutexW")
+	procCloseHandle          = kernel32.NewProc("CloseHandle")
 
 	mu       sync.Mutex
 	raltDown bool
@@ -284,7 +286,24 @@ func sendUnicodeChar(ch rune) {
 	procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
 }
 
+// singleInstanceMutexName is a session-local named mutex used to detect
+// whether another copy of this program is already running, so launching
+// it twice (e.g. once from Startup and once by hand) doesn't leave two
+// hooks fighting over the same keystrokes.
+const singleInstanceMutexName = "Local\\us-international-without-dead-keys-9f3b6b7a-single-instance"
+
 func main() {
+	name, _ := syscall.UTF16PtrFromString(singleInstanceMutexName)
+	mutex, _, err := procCreateMutexW.Call(0, 0, uintptr(unsafe.Pointer(name)))
+	if mutex == 0 {
+		return
+	}
+	defer procCloseHandle.Call(mutex)
+	if err == syscall.ERROR_ALREADY_EXISTS {
+		// Another instance already owns the mutex - exit quietly.
+		return
+	}
+
 	hInstance, _, _ := procGetModuleHandleW.Call(0)
 
 	hook, _, _ := procSetWindowsHookExW.Call(
