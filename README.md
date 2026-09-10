@@ -13,6 +13,40 @@ immediately - nothing waits for a second keystroke.
 `6`/`^` are also always forced to their plain character immediately
 instead of the dead-key wait that layout normally uses.
 
+## Installation
+
+Run `install-autostart.ps1` from an open PowerShell window (don't
+double-click it - the window closes immediately on completion). It
+downloads the latest release exe and copies it into your personal
+Startup folder (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`),
+then starts it. No admin rights needed; re-running it just replaces the
+existing copy, so it never leaves duplicates behind. Running the exe more
+than once at a time is harmless - a second copy exits immediately if one
+is already running.
+
+Run `uninstall-autostart.ps1` the same way to stop it and remove it from
+Startup.
+
+## Build
+
+```
+go build -buildvcs=false -ldflags="-H=windowsgui" -o us-international-without-dead-keys.exe .
+```
+
+Double-click the exe - no installer, no console window. Stop it via Task
+Manager when done.
+
+## How it works
+
+A low-level keyboard hook (`WH_KEYBOARD_LL`) watches for Right Alt plus a
+mapped key while the focused window's layout is
+"United States-International" (checked via `GetKeyboardLayoutNameW`), and
+injects the target Unicode character via `SendInput` instead. Everything
+else passes through untouched. Pure Go (no cgo), so it cross-compiles to
+Windows trivially from any OS.
+
+## Key map
+
 | Key | AltGr | Shift+AltGr | | Key | AltGr | Shift+AltGr |
 |-----|-------|-------------|-|-----|-------|-------------|
 | 1   | ¡     | ¹           | | Q   | ä     | Ä           |
@@ -34,35 +68,3 @@ instead of the dead-key wait that layout normally uses.
 | ;   | ¶     | °           | | ,   | ç     | Ç           |
 | '   | ´     | ¨           | | /   | ¿     | ¿           |
 | \\  | ¬     | ¦           |
-
-## Build
-
-```
-go build -buildvcs=false -ldflags="-H=windowsgui" -o us-international-without-dead-keys.exe .
-```
-
-Double-click the exe - no installer, no console window. Stop it via Task
-Manager when done.
-
-### Installation
-
-Run `install-autostart.ps1` from an open PowerShell window (don't
-double-click it - the window closes immediately on completion). It
-downloads the latest release exe and copies it into your personal
-Startup folder (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`),
-then starts it. No admin rights needed; re-running it just replaces the
-existing copy, so it never leaves duplicates behind. Running the exe more
-than once at a time is harmless - a second copy exits immediately if one
-is already running.
-
-Run `uninstall-autostart.ps1` the same way to stop it and remove it from
-Startup.
-
-## How it works
-
-A low-level keyboard hook (`WH_KEYBOARD_LL`) watches for Right Alt plus a
-mapped key while the focused window's layout is
-"United States-International" (checked via `GetKeyboardLayoutNameW`), and
-injects the target Unicode character via `SendInput` instead. Everything
-else passes through untouched. Pure Go (no cgo), so it cross-compiles to
-Windows trivially from any OS.
