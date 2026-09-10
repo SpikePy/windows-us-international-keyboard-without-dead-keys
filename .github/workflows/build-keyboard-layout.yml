@@ -16,7 +16,7 @@ jobs:
     env:
       KLC_FILE: US-AltGr-International.klc
       # Official Microsoft Download Center direct link for MSKLC 1.4.
-      MSKLC_URL: https://web.archive.org/web/20200803205233if_/https://download.microsoft.com/download/1/1/8/118aedd2-152c-453f-bac9-5dd8fb310870/MSKLC.exe
+      MSKLC_URL: https://download.microsoft.com/download/6/f/5/6f5ce43a-e892-4fd1-b9a6-1a0cbb64e6e2/MSKLC.exe
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -63,6 +63,17 @@ jobs:
           Get-ChildItem -Path C:\msklc -Recurse -Include cl.exe, link.exe, rc.exe, kbdutool.exe |
             ForEach-Object { $_.DirectoryName } | Select-Object -Unique |
             ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
+
+      - name: Disable SEHOP for kbdutool.exe
+        shell: pwsh
+        run: |
+          # GitHub's Windows runners are Server SKUs, which enable SEHOP
+          # system-wide by default (client Windows 10/11 does not). This
+          # ~2007-era 32-bit tool crashes with STATUS_STACK_BUFFER_OVERRUN
+          # on every input under SEHOP; real users running it on their own
+          # Windows 11 machines would never hit this.
+          Set-ProcessMitigation -Name kbdutool.exe -Disable SEHOP
+          Get-ProcessMitigation -Name kbdutool.exe | Format-List
 
       - name: Build amd64 (x64) layout DLL
         shell: pwsh
