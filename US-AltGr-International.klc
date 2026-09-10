@@ -77,7 +77,6 @@ LAYOUT ;an extra '@' at the end is a dead key
 // Special keys
 39 Space 0 0020 0020 -1 0020 0020
 0e Back 0 0008 0008 -1 -1 -1
-01 Esc 0 001b 001b -1 -1 -1
 0f Tab 0 0009 0009 -1 -1 -1
 
 3b F1  0 0000 0000 -1 -1 -1
