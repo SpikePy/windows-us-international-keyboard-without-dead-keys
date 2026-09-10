@@ -25,7 +25,7 @@ jobs:
       MSKLC_URL: https://download.microsoft.com/download/6/f/5/6f5ce43a-e892-4fd1-b9a6-1a0cbb64e6e2/MSKLC.exe
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Download MSKLC (for its bundled kbd.h header)
         shell: pwsh
@@ -112,7 +112,7 @@ jobs:
           Get-ChildItem package | Select-Object -ExpandProperty FullName
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: US-AltGr-International-keyboard-layout
           path: package/
