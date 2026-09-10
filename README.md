@@ -39,12 +39,11 @@ which layout is active.
 
 ## Get it
 
-Download `altgrhook.exe` from the latest successful run of
-[Build AltGr background helper](../../actions/workflows/build-altgrhook.yml)
-(the `AltGr-background-helper` artifact), or build it yourself:
+Download `altgrhook.exe` from the
+[latest release](../../releases/latest), or build it yourself:
 
 ```
-go build -ldflags="-H=windowsgui" -o altgrhook.exe .
+go build -buildvcs=false -ldflags="-H=windowsgui" -o altgrhook.exe .
 ```
 
 Then just double-click `altgrhook.exe` - no installer, no console window.
