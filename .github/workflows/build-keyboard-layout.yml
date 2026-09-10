@@ -24,9 +24,11 @@ jobs:
 
       - name: Extract MSKLC (pull tools out of the installer, no GUI install needed)
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $sevenZip = "C:\Program Files\7-Zip\7z.exe"
 
+          # MSKLC.exe is a self-extracting bootstrapper wrapping an .msi.
           & $sevenZip x "MSKLC.exe" -oC:\msklc_stage1 -y | Out-Null
 
           $candidates = Get-ChildItem -Path C:\msklc_stage1 -Recurse -Filter *.msi
@@ -38,7 +40,11 @@ jobs:
           if (-not $msi) { $msi = $candidates | Select-Object -First 1 }
           Write-Host "Using MSI: $($msi.FullName)"
 
-          & $sevenZip x $msi.FullName -oC:\msklc -y | Out-Null
+          # Use msiexec's administrative install to lay out the MSI's files.
+          # (7-Zip can parse MSI tables too, but chokes on the embedded Icon
+          # stream and hangs trying to open it as a nested PE archive.)
+          $proc = Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=C:\msklc" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "msiexec admin install failed with exit code $($proc.ExitCode)" }
 
           Write-Host "---- Extracted MSKLC tree ----"
           Get-ChildItem -Path C:\msklc -Recurse | Select-Object -ExpandProperty FullName
@@ -63,6 +69,7 @@ jobs:
 
       - name: Build amd64 (x64) layout DLL
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $work = "C:\build_amd64"
           New-Item -ItemType Directory -Path $work | Out-Null
@@ -78,6 +85,7 @@ jobs:
 
       - name: Build x86 layout DLL
         shell: pwsh
+        timeout-minutes: 5
         run: |
           $work = "C:\build_x86"
           New-Item -ItemType Directory -Path $work | Out-Null
