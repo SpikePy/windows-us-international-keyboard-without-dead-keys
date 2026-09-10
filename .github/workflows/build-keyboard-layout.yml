@@ -4,25 +4,23 @@ on:
   push:
     paths:
       - "US-AltGr-International.klc"
-      - "kbd.h"
-      - "kbdusaltgr.rc"
+      - "dll/**"
       - "tools/klc2c/**"
       - ".github/workflows/build-keyboard-layout.yml"
   workflow_dispatch: {}
 
 jobs:
   build:
-    # kbdutool.exe (MSKLC's ~2007-era 32-bit compiler) crashes with
-    # STATUS_STACK_BUFFER_OVERRUN on GitHub's current hosted Windows runner
-    # images, regardless of .klc content - confirmed via runner-image-version
-    # comparison to be an environment regression, not a content issue. We
-    # bypass it (and MSKLC's installer download) entirely: tools/klc2c is a
-    # small Go program that generates the keyboard layout DLL's C source
-    # (grounded in Microsoft's own kbdus.c reference sample) directly from
-    # the .klc, and kbd.h is a minimal, self-authored header with just the
-    # KBDTABLES-family definitions it needs. Both get compiled with
-    # cl.exe/link.exe.
-    runs-on: windows-2022
+    # Cross-compiled entirely on Linux with mingw-w64 - no Windows runner,
+    # no MSVC, no MSKLC/kbdutool.exe (which crashes unreliably on GitHub's
+    # hosted Windows runner images - a confirmed environment regression,
+    # not a content issue). tools/klc2c is a small Go program that
+    # generates the keyboard layout DLL's C source (grounded in Microsoft's
+    # own kbdus.c reference sample) directly from the .klc, into dll/,
+    # where kbd.h (a minimal, self-authored header with just the
+    # KBDTABLES-family definitions it needs) and kbdusaltgr.rc already
+    # live. mingw-w64's gcc/windres compile that into real Windows PE DLLs.
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -32,59 +30,46 @@ jobs:
         with:
           go-version: "1.24"
 
+      - name: Install mingw-w64
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc-mingw-w64-x86-64 gcc-mingw-w64-i686
+
       - name: Build klc2c
-        shell: pwsh
         working-directory: tools/klc2c
-        run: go build -o ../../klc2c.exe .
+        run: go build -o ../../klc2c .
 
       - name: Generate kbdusaltgr.c from the .klc
-        shell: pwsh
-        run: .\klc2c.exe -in US-AltGr-International.klc -out kbdusaltgr.c -def kbdusaltgr.def
+        run: ./klc2c -in US-AltGr-International.klc -out dll/kbdusaltgr.c -def dll/kbdusaltgr.def
 
-      - name: Set up MSVC (amd64)
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64
       - name: Compile amd64 (x64) layout DLL
-        shell: cmd
+        working-directory: dll
         run: |
-          mkdir build_amd64
-          rc.exe /nologo /fo build_amd64\kbdusaltgr.res kbdusaltgr.rc
-          if errorlevel 1 exit /b 1
-          cl.exe /nologo /LD /Fe:build_amd64\kbdusaltgr.dll kbdusaltgr.c build_amd64\kbdusaltgr.res kbdusaltgr.def
-          if errorlevel 1 exit /b 1
-          if not exist build_amd64\kbdusaltgr.dll exit /b 1
+          mkdir -p ../build_amd64
+          x86_64-w64-mingw32-windres kbdusaltgr.rc ../build_amd64/kbdusaltgr.res.o
+          x86_64-w64-mingw32-gcc -shared -o ../build_amd64/kbdusaltgr.dll \
+            kbdusaltgr.c ../build_amd64/kbdusaltgr.res.o kbdusaltgr.def -Wl,--kill-at
+          test -f ../build_amd64/kbdusaltgr.dll
 
-      - name: Set up MSVC (x86)
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x86
       - name: Compile x86 layout DLL
-        shell: cmd
+        working-directory: dll
         run: |
-          mkdir build_x86
-          rc.exe /nologo /fo build_x86\kbdusaltgr.res kbdusaltgr.rc
-          if errorlevel 1 exit /b 1
-          cl.exe /nologo /LD /Fe:build_x86\kbdusaltgr.dll kbdusaltgr.c build_x86\kbdusaltgr.res kbdusaltgr.def
-          if errorlevel 1 exit /b 1
-          if not exist build_x86\kbdusaltgr.dll exit /b 1
+          mkdir -p ../build_x86
+          i686-w64-mingw32-windres kbdusaltgr.rc ../build_x86/kbdusaltgr.res.o
+          i686-w64-mingw32-gcc -shared -o ../build_x86/kbdusaltgr.dll \
+            kbdusaltgr.c ../build_x86/kbdusaltgr.res.o kbdusaltgr.def -Wl,--kill-at
+          test -f ../build_x86/kbdusaltgr.dll
 
       - name: Package installable layout
-        shell: pwsh
         run: |
-          New-Item -ItemType Directory -Path package | Out-Null
+          mkdir -p package
+          cp build_amd64/kbdusaltgr.dll package/kbdusaltgr.dll
+          cp build_x86/kbdusaltgr.dll package/x86_kbdusaltgr.dll
+          printf 'kbdusaltgr.dll' > package/dllname.txt
+          cp install-layout.ps1 uninstall-layout.ps1 package/
+          cp dll/kbdusaltgr.c package/
+          cp US-AltGr-International.klc package/
 
-          Copy-Item build_amd64\kbdusaltgr.dll "package\kbdusaltgr.dll"
-          Copy-Item build_x86\kbdusaltgr.dll "package\x86_kbdusaltgr.dll"
-          Set-Content -Path "package\dllname.txt" -Value "kbdusaltgr.dll" -Encoding ascii
-
-          Copy-Item install-layout.ps1 package\
-          Copy-Item uninstall-layout.ps1 package\
-          Copy-Item kbdusaltgr.c package\
-          Copy-Item US-AltGr-International.klc package\ -ErrorAction SilentlyContinue
-
-          Write-Host "---- Package contents ----"
-          Get-ChildItem package | Select-Object -ExpandProperty FullName
+          echo "---- Package contents ----"
+          ls -la package/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7

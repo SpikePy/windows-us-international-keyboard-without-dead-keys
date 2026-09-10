@@ -8,16 +8,22 @@ manually from the Actions tab) triggers
 `.github/workflows/build-keyboard-layout.yml`, which:
 
 1. builds `tools/klc2c`, a small Go program that parses the `.klc` and
-   generates the keyboard layout DLL's C source (`kbdusaltgr.c`/`.def`) -
+   generates the keyboard layout DLL's C source into `dll/kbdusaltgr.c`/`.def` -
    grounded in Microsoft's own `kbdus.c` reference sample and `kbd.h`'s real
    struct layout, rather than using MSKLC's `kbdutool.exe`, which currently
    crashes unreliably on GitHub's hosted Windows runner images;
-2. compiles that generated source directly with MSVC (`cl.exe`/`link.exe`);
+2. cross-compiles that generated source into real Windows PE DLLs using
+   mingw-w64 (`gcc`/`windres`) - runs entirely on a Linux runner, no Windows
+   image or MSVC needed at all;
 3. uploads an artifact named `US-AltGr-International-keyboard-layout`.
 
-`kbd.h` is a minimal, self-authored header (not the WDK's) with just the
-`KBDTABLES`-family definitions the generated source needs, so the whole
-pipeline has no dependency on MSKLC or the WDK being downloaded anywhere.
+`dll/` holds the C build dependencies: `kbd.h` is a minimal, self-authored
+header (not the WDK's) with just the `KBDTABLES`-family definitions the
+generated source needs, and `kbdusaltgr.rc` is its version-info resource -
+so the whole pipeline has no dependency on MSKLC, the WDK, or Windows itself
+being available anywhere in CI. The generated `kbdusaltgr.c`/`.def` land in
+`dll/` too (gitignored) so `#include "kbd.h"` resolves locally without any
+extra include path.
 
 The artifact contains:
 

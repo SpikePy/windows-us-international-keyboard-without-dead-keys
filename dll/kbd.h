@@ -29,13 +29,17 @@ typedef struct {
     BYTE ModBits;
 } VK_TO_BIT, *PVK_TO_BIT;
 
+#ifdef _MSC_VER
 #pragma warning(disable : 4200)
+#endif
 typedef struct {
     PVK_TO_BIT pVkToBit;
     WORD       wMaxModBits;
     BYTE       ModNumber[]; /* flexible array member: indexed by raw ModBits */
 } MODIFIERS, *PMODIFIERS;
+#ifdef _MSC_VER
 #pragma warning(default : 4200)
+#endif
 
 /*
  * VK_TO_WCHARS<n> - a Virtual Key plus <n> Unicode characters, one per

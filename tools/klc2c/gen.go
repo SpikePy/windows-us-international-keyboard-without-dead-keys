@@ -143,10 +143,9 @@ func Generate(l *Layout) (string, error) {
 	fmt.Fprintf(&b, "* edit the .klc and regenerate instead.\n")
 	fmt.Fprintf(&b, "\\***************************************************************************/\n\n")
 	fmt.Fprintf(&b, "#include <windows.h>\n#include \"kbd.h\"\n\n")
-	fmt.Fprintf(&b, "#pragma data_seg(\".data\")\n#define ALLOC_SECTION_LDATA\n\n")
 
 	// ausVK[]
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA USHORT ausVK[] = {\n")
+	fmt.Fprintf(&b, "static USHORT ausVK[] = {\n")
 	for sc := byte(0); ; sc++ {
 		e := ausVK[sc]
 		fmt.Fprintf(&b, "    /* %02X */ %s,\n", sc, e.Expr)
@@ -157,26 +156,26 @@ func Generate(l *Layout) (string, error) {
 	fmt.Fprintf(&b, "};\n\n")
 
 	// aE0VscToVk[] / aE1VscToVk[]
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA VSC_VK aE0VscToVk[] = {\n")
+	fmt.Fprintf(&b, "static VSC_VK aE0VscToVk[] = {\n")
 	for _, e := range aE0VscToVkBase {
 		fmt.Fprintf(&b, "    { 0x%02X, %s | KBDEXT },\n", e.ScanCode, e.VK)
 	}
 	fmt.Fprintf(&b, "    { 0, 0 }\n};\n\n")
 
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA VSC_VK aE1VscToVk[] = {\n")
+	fmt.Fprintf(&b, "static VSC_VK aE1VscToVk[] = {\n")
 	for _, e := range aE1VscToVkBase {
 		fmt.Fprintf(&b, "    { 0x%02X, %s },\n", e.ScanCode, e.VK)
 	}
 	fmt.Fprintf(&b, "    { 0, 0 }\n};\n\n")
 
 	// aVkToBits[] / CharModifiers
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA VK_TO_BIT aVkToBits[] = {\n")
+	fmt.Fprintf(&b, "static VK_TO_BIT aVkToBits[] = {\n")
 	fmt.Fprintf(&b, "    { VK_SHIFT,   KBDSHIFT },\n")
 	fmt.Fprintf(&b, "    { VK_CONTROL, KBDCTRL  },\n")
 	fmt.Fprintf(&b, "    { VK_MENU,    KBDALT   },\n")
 	fmt.Fprintf(&b, "    { 0,          0        }\n};\n\n")
 
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA MODIFIERS CharModifiers = {\n")
+	fmt.Fprintf(&b, "static MODIFIERS CharModifiers = {\n")
 	fmt.Fprintf(&b, "    &aVkToBits[0],\n    %d,\n    {\n", modSize-1)
 	for i, mn := range modNumbers {
 		comma := ","
@@ -188,7 +187,7 @@ func Generate(l *Layout) (string, error) {
 	fmt.Fprintf(&b, "    }\n};\n\n")
 
 	// aVkToWch2[] (simple rows: base + shift only)
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA VK_TO_WCHARS2 aVkToWch2[] = {\n")
+	fmt.Fprintf(&b, "static VK_TO_WCHARS2 aVkToWch2[] = {\n")
 	for _, r := range simpleRows {
 		expr, _ := vkExprFor(r.VKName)
 		fmt.Fprintf(&b, "  { %-14s, %-11s, %s, %s },\n",
@@ -200,7 +199,7 @@ func Generate(l *Layout) (string, error) {
 	extName := fmt.Sprintf("aVkToWch%d", numStates)
 	extType := fmt.Sprintf("VK_TO_WCHARS%d", numStates)
 	if len(extendedRows) > 0 {
-		fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA %s %s[] = {\n", extType, extName)
+		fmt.Fprintf(&b, "static %s %s[] = {\n", extType, extName)
 		for _, r := range extendedRows {
 			expr, _ := vkExprFor(r.VKName)
 			var cells []string
@@ -217,13 +216,13 @@ func Generate(l *Layout) (string, error) {
 	}
 
 	// aVkToWch1[] - numpad digits (fixed, not klc-customizable)
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA VK_TO_WCHARS1 aVkToWch1[] = {\n")
+	fmt.Fprintf(&b, "static VK_TO_WCHARS1 aVkToWch1[] = {\n")
 	for d := 0; d <= 9; d++ {
 		fmt.Fprintf(&b, "    { VK_NUMPAD%d, 0, '%d' },\n", d, d)
 	}
 	fmt.Fprintf(&b, "    { 0, 0, '\\0' }\n};\n\n")
 
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA VK_TO_WCHAR_TABLE aVkToWcharTable[] = {\n")
+	fmt.Fprintf(&b, "static VK_TO_WCHAR_TABLE aVkToWcharTable[] = {\n")
 	if len(extendedRows) > 0 {
 		fmt.Fprintf(&b, "    { (PVK_TO_WCHARS1)%s, %d, sizeof(%s[0]) },\n", extName, numStates, extName)
 	}
@@ -233,7 +232,7 @@ func Generate(l *Layout) (string, error) {
 
 	// aKeyNames[] / aKeyNamesExt[]
 	writeKeyNames := func(name string, entries []KeyName) {
-		fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA VSC_LPWSTR %s[] = {\n", name)
+		fmt.Fprintf(&b, "static VSC_LPWSTR %s[] = {\n", name)
 		sorted := append([]KeyName(nil), entries...)
 		sort.Slice(sorted, func(i, j int) bool { return sorted[i].ScanCode < sorted[j].ScanCode })
 		for _, kn := range sorted {
@@ -245,7 +244,7 @@ func Generate(l *Layout) (string, error) {
 	writeKeyNames("aKeyNamesExt", l.KeyNamesExt)
 
 	// KBDTABLES + KbdLayerDescriptor
-	fmt.Fprintf(&b, "static ALLOC_SECTION_LDATA KBDTABLES KbdTables = {\n")
+	fmt.Fprintf(&b, "static KBDTABLES KbdTables = {\n")
 	fmt.Fprintf(&b, "    &CharModifiers,\n    aVkToWcharTable,\n    NULL,\n")
 	fmt.Fprintf(&b, "    aKeyNames,\n    aKeyNamesExt,\n    NULL,\n")
 	fmt.Fprintf(&b, "    ausVK,\n    sizeof(ausVK) / sizeof(ausVK[0]),\n")
