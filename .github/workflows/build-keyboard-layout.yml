@@ -70,28 +70,6 @@ jobs:
           name: msklc-toolchain
           path: C:\msklc
 
-      - name: Convert .klc to UTF-16LE with BOM (kbdutool requirement)
-        shell: pwsh
-        run: |
-          $content = Get-Content -Path $env:KLC_FILE -Raw
-          $bomUnicode = New-Object System.Text.UnicodeEncoding($false, $true)
-          [System.IO.File]::WriteAllText((Join-Path (Get-Location) $env:KLC_FILE), $content, $bomUnicode)
-
-      - name: Diagnose - generate C source only (no compile)
-        shell: pwsh
-        timeout-minutes: 5
-        run: |
-          $work = "C:\diag"
-          New-Item -ItemType Directory -Path $work | Out-Null
-          Copy-Item $env:KLC_FILE $work
-          Push-Location $work
-          & $env:KBDUTOOL -u -s $env:KLC_FILE
-          $exitCode = $LASTEXITCODE
-          Pop-Location
-          Write-Host "-s exit code: $exitCode"
-          Write-Host "---- diag output ----"
-          Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
-
       - name: Build amd64 (x64) layout DLL
         shell: pwsh
         timeout-minutes: 5
@@ -100,7 +78,7 @@ jobs:
           New-Item -ItemType Directory -Path $work | Out-Null
           Copy-Item $env:KLC_FILE $work
           Push-Location $work
-          & $env:KBDUTOOL -u -m $env:KLC_FILE
+          & $env:KBDUTOOL -v -w -m -u $env:KLC_FILE
           $exitCode = $LASTEXITCODE
           Pop-Location
           Write-Host "---- amd64 build output ----"
@@ -116,7 +94,7 @@ jobs:
           New-Item -ItemType Directory -Path $work | Out-Null
           Copy-Item $env:KLC_FILE $work
           Push-Location $work
-          & $env:KBDUTOOL -u -x $env:KLC_FILE
+          & $env:KBDUTOOL -v -w -x -u $env:KLC_FILE
           $exitCode = $LASTEXITCODE
           Pop-Location
           Write-Host "---- x86 build output ----"

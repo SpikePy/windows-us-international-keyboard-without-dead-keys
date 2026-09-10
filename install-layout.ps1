@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $dllName = (Get-Content (Join-Path $scriptDir "dllname.txt")).Trim()
-$layoutText = "US QWERTY - AltGr International"
+$layoutText = "US International - AltGr - No Dead Keys"
 $baseLanguage = 0x0409  # en-US, from LOCALEID in the .klc
 
 $amd64Dll = Join-Path $scriptDir $dllName
