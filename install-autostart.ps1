@@ -27,8 +27,17 @@ Write-Host "Downloading $($release.tag_name) ($($asset.browser_download_url))...
 Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $tempFile
 
 # Stop any already-running copy so the file below isn't locked and so we
-# don't end up with two instances racing over the same hotkeys.
-Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($exeName)) -ErrorAction SilentlyContinue | Stop-Process -Force
+# don't end up with two instances racing over the same hotkeys. Wait for
+# it to fully exit - Stop-Process can return before Windows has finished
+# tearing down the killed process's kernel objects (including the named
+# mutex the exe uses as a single-instance guard), and starting the new
+# copy too soon after can make it see that mutex as still held and exit
+# immediately.
+$running = Get-Process -Name ([System.IO.Path]::GetFileNameWithoutExtension($exeName)) -ErrorAction SilentlyContinue
+if ($running) {
+    $running | Stop-Process -Force
+    $running | Wait-Process -ErrorAction SilentlyContinue
+}
 
 # Always move to the same fixed destination filename, replacing whatever
 # is already there, so re-running this script never leaves duplicate
