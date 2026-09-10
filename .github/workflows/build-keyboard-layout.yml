@@ -1,0 +1,117 @@
+name: Build US-AltGr-International keyboard layout
+
+on:
+  push:
+    paths:
+      - "US-AltGr-International.klc"
+      - ".github/workflows/build-keyboard-layout.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      KLC_FILE: US-AltGr-International.klc
+      # Official Microsoft Download Center direct link for MSKLC 1.4.
+      MSKLC_URL: https://download.microsoft.com/download/6/f/5/6f5ce43a-e892-4fd1-b9a6-1a0cbb64e6e2/MSKLC.exe
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download MSKLC (Microsoft Keyboard Layout Creator)
+        shell: pwsh
+        run: Invoke-WebRequest -Uri $env:MSKLC_URL -OutFile MSKLC.exe
+
+      - name: Extract MSKLC (pull tools out of the installer, no GUI install needed)
+        shell: pwsh
+        run: |
+          $sevenZip = "C:\Program Files\7-Zip\7z.exe"
+
+          & $sevenZip x "MSKLC.exe" -oC:\msklc_stage1 -y | Out-Null
+
+          $candidates = Get-ChildItem -Path C:\msklc_stage1 -Recurse -Filter *.msi
+          if (-not $candidates) { throw "No .msi found inside MSKLC.exe" }
+          Write-Host "MSI candidates found:"
+          $candidates | ForEach-Object { Write-Host "  $($_.FullName)" }
+
+          $msi = $candidates | Where-Object { $_.Name -match "(?i)msklc|keyboard" } | Select-Object -First 1
+          if (-not $msi) { $msi = $candidates | Select-Object -First 1 }
+          Write-Host "Using MSI: $($msi.FullName)"
+
+          & $sevenZip x $msi.FullName -oC:\msklc -y | Out-Null
+
+          Write-Host "---- Extracted MSKLC tree ----"
+          Get-ChildItem -Path C:\msklc -Recurse | Select-Object -ExpandProperty FullName
+
+      - name: Locate kbdutool.exe and its bundled compiler
+        shell: pwsh
+        run: |
+          $tool = Get-ChildItem -Path C:\msklc -Recurse -Filter kbdutool.exe | Select-Object -First 1
+          if (-not $tool) { throw "kbdutool.exe not found after extracting MSKLC" }
+          Write-Host "kbdutool.exe: $($tool.FullName)"
+          "KBDUTOOL=$($tool.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+          Get-ChildItem -Path C:\msklc -Recurse -Include cl.exe, link.exe, rc.exe, kbdutool.exe |
+            ForEach-Object { $_.DirectoryName } | Select-Object -Unique |
+            ForEach-Object { $_ | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8 }
+
+      - name: Convert .klc to UTF-16LE (kbdutool requirement)
+        shell: pwsh
+        run: |
+          $content = Get-Content -Path $env:KLC_FILE -Raw
+          Set-Content -Path $env:KLC_FILE -Value $content -Encoding Unicode
+
+      - name: Build amd64 (x64) layout DLL
+        shell: pwsh
+        run: |
+          $work = "C:\build_amd64"
+          New-Item -ItemType Directory -Path $work | Out-Null
+          Copy-Item $env:KLC_FILE $work
+          Push-Location $work
+          & $env:KBDUTOOL -u -m $env:KLC_FILE
+          $exitCode = $LASTEXITCODE
+          Pop-Location
+          Write-Host "---- amd64 build output ----"
+          Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
+          if ($exitCode -ne 0) { throw "kbdutool failed (amd64), exit code $exitCode" }
+          if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No amd64 .dll produced" }
+
+      - name: Build x86 layout DLL
+        shell: pwsh
+        run: |
+          $work = "C:\build_x86"
+          New-Item -ItemType Directory -Path $work | Out-Null
+          Copy-Item $env:KLC_FILE $work
+          Push-Location $work
+          & $env:KBDUTOOL -u -x $env:KLC_FILE
+          $exitCode = $LASTEXITCODE
+          Pop-Location
+          Write-Host "---- x86 build output ----"
+          Get-ChildItem -Path $work -Recurse | Select-Object -ExpandProperty FullName
+          if ($exitCode -ne 0) { throw "kbdutool failed (x86), exit code $exitCode" }
+          if (-not (Get-ChildItem -Path $work -Filter *.dll)) { throw "No x86 .dll produced" }
+
+      - name: Package installable layout
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package | Out-Null
+
+          $dllAmd64 = Get-ChildItem -Path C:\build_amd64 -Filter *.dll | Select-Object -First 1
+          $dllX86 = Get-ChildItem -Path C:\build_x86 -Filter *.dll | Select-Object -First 1
+
+          Copy-Item $dllAmd64.FullName "package\$($dllAmd64.Name)"
+          Copy-Item $dllX86.FullName "package\x86_$($dllAmd64.Name)"
+          Set-Content -Path "package\dllname.txt" -Value $dllAmd64.Name -Encoding ascii
+
+          Copy-Item install-layout.ps1 package\
+          Copy-Item uninstall-layout.ps1 package\
+          Copy-Item $env:KLC_FILE package\
+
+          Write-Host "---- Package contents ----"
+          Get-ChildItem package | Select-Object -ExpandProperty FullName
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: US-AltGr-International-keyboard-layout
+          path: package/
