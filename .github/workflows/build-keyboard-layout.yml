@@ -53,13 +53,18 @@ jobs:
           $proc = Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=C:\msklc" -Wait -PassThru
           if ($proc.ExitCode -ne 0) { throw "msiexec admin install failed with exit code $($proc.ExitCode)" }
 
-      - name: Locate kbd.h
+      - name: Locate and stage kbd.h
         shell: pwsh
         run: |
           $header = Get-ChildItem -Path C:\msklc -Recurse -Filter kbd.h | Select-Object -First 1
           if (-not $header) { throw "kbd.h not found after extracting MSKLC" }
           Write-Host "kbd.h: $($header.FullName)"
-          "KBD_H_DIR=$($header.DirectoryName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # Copy just this one header next to our source so #include "kbd.h"
+          # resolves via the local quoted-include lookup. Adding MSKLC's whole
+          # "inc" folder as a compiler -I search path instead shadows the
+          # modern Windows SDK's own dde.h/ddeml.h with MSKLC's ancient
+          # bundled copies, breaking <windows.h> with cascading syntax errors.
+          Copy-Item $header.FullName .
 
       - name: Set up MSVC (amd64)
         uses: ilammy/msvc-dev-cmd@v1
@@ -69,7 +74,7 @@ jobs:
         shell: cmd
         run: |
           mkdir build_amd64
-          cl.exe /nologo /LD /I"%KBD_H_DIR%" /Fe:build_amd64\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
+          cl.exe /nologo /LD /Fe:build_amd64\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
           if errorlevel 1 exit /b 1
           if not exist build_amd64\kbdusaltgr.dll exit /b 1
 
@@ -81,7 +86,7 @@ jobs:
         shell: cmd
         run: |
           mkdir build_x86
-          cl.exe /nologo /LD /I"%KBD_H_DIR%" /Fe:build_x86\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
+          cl.exe /nologo /LD /Fe:build_x86\kbdusaltgr.dll kbdusaltgr.c kbdusaltgr.rc kbdusaltgr.def
           if errorlevel 1 exit /b 1
           if not exist build_x86\kbdusaltgr.dll exit /b 1
 
