@@ -6,14 +6,15 @@ Administrator rights needed.
 
 Hold the physical **Right Alt** key and press a mapped letter, digit, or
 symbol, and the accented character appears immediately - nothing waits for
-a second keystroke. It works on top of whatever keyboard layout you
-already have active.
+a second keystroke.
 
-The apostrophe (`'`), backtick/grave (`` ` ``/`~`), and `6`/`^` keys are
-also always forced to their plain character immediately, even without
-AltGr - some built-in Windows layouts (like "United States-International")
-treat those as dead keys by default, and this overrides that regardless of
-which layout is active.
+**This only activates while the active Windows keyboard layout is
+"United States-International"** - switch to German, plain US, or any
+other layout and altgrhook does nothing, leaving normal typing completely
+untouched. Under that layout, the apostrophe (`'`), backtick/grave
+(`` ` ``/`~`), and `6`/`^` keys are also always forced to their plain
+character immediately instead of the dead-key wait that layout would
+normally use.
 
 | Key | AltGr | Shift+AltGr | | Key | AltGr | Shift+AltGr |
 |-----|-------|-------------|-|-----|-------|-------------|
@@ -71,7 +72,10 @@ replaces the copy already there, so it never leaves duplicates behind.
 ## How it works
 
 A low-level keyboard hook (`WH_KEYBOARD_LL`) watches for the Right Alt key
-held together with one of the mapped keys; when it sees that combination it
+held together with one of the mapped keys; when it sees that combination,
+and the focused window's active keyboard layout is
+"United States-International" (checked via `GetKeyboardLayoutNameW`), it
 swallows the keystroke and injects the target Unicode character via
-`SendInput` instead. Every other key press passes through untouched. It's
-pure Go (no cgo), so it cross-compiles to Windows trivially from any OS.
+`SendInput` instead. Every other key press, and everything while any other
+layout is active, passes through untouched. It's pure Go (no cgo), so it
+cross-compiles to Windows trivially from any OS.

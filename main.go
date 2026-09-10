@@ -1,12 +1,16 @@
 // Command altgrhook is a small background program for Windows that adds
 // AltGr (Right Alt) shortcuts for accented characters, without installing
-// anything system-wide - no admin rights needed. It works on top of
-// whatever keyboard layout is already active: hold the physical Right Alt
-// key and press a mapped letter/digit/symbol to get the accented character
-// immediately (no dead keys - nothing waits for a second keystroke).
+// anything system-wide - no admin rights needed. Hold the physical Right
+// Alt key and press a mapped letter/digit/symbol to get the accented
+// character immediately (no dead keys - nothing waits for a second
+// keystroke).
 //
 // It implements a "US International - AltGr - No Dead Keys" character set:
-// AltGr+letter/digit/symbol produces the accented character directly.
+// AltGr+letter/digit/symbol produces the accented character directly. This
+// only activates while the active Windows keyboard layout for the
+// focused window is actually "United States-International" - switching to
+// German, plain US, or any other layout makes this program a no-op, so
+// normal typing under those layouts is completely unaffected.
 //
 // Technique: a low-level keyboard hook (WH_KEYBOARD_LL) watches for the
 // Right Alt key plus a mapped key; when both are held, it swallows that
@@ -15,6 +19,7 @@
 package main
 
 import (
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -49,6 +54,11 @@ const (
 	vkOem2     = 0xBF // /
 )
 
+// usInternationalKLID is the 8-hex-digit keyboard layout identifier for
+// Windows' built-in "United States-International" layout, as reported by
+// GetKeyboardLayoutNameW.
+const usInternationalKLID = "00020409"
+
 // undeadMap covers keys that are dead keys under some active Windows
 // layouts (notably the built-in "United States-International") even
 // without AltGr - e.g. apostrophe and backtick normally wait for a second
@@ -63,16 +73,16 @@ var undeadMap = map[uint32][2]rune{
 
 // altGrMap maps a virtual-key code to its {base, Shift+AltGr} characters.
 var altGrMap = map[uint32][2]rune{
-	'1': {0x00A1, 0x00B9},
-	'2': {0x00B2, 0x00B2},
-	'3': {0x00B3, 0x00B3},
-	'4': {0x00A4, 0x00A3},
-	'5': {0x20AC, 0x20AC},
-	'6': {0x00BC, 0x00BC},
-	'7': {0x00BD, 0x00BD},
-	'8': {0x00BE, 0x00BE},
-	'9': {0x2018, 0x2018},
-	'0': {0x2019, 0x2019},
+	'1':        {0x00A1, 0x00B9},
+	'2':        {0x00B2, 0x00B2},
+	'3':        {0x00B3, 0x00B3},
+	'4':        {0x00A4, 0x00A3},
+	'5':        {0x20AC, 0x20AC},
+	'6':        {0x00BC, 0x00BC},
+	'7':        {0x00BD, 0x00BD},
+	'8':        {0x00BE, 0x00BE},
+	'9':        {0x2018, 0x2018},
+	'0':        {0x2019, 0x2019},
 	vkOemMinus: {0x00A5, 0x00A5},
 	vkOemPlus:  {0x00D7, 0x00F7},
 	'Q':        {0x00E4, 0x00C4},
@@ -141,19 +151,72 @@ var (
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 
-	procSetWindowsHookExW   = user32.NewProc("SetWindowsHookExW")
-	procCallNextHookEx      = user32.NewProc("CallNextHookEx")
-	procUnhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
-	procGetMessageW         = user32.NewProc("GetMessageW")
-	procTranslateMessage    = user32.NewProc("TranslateMessage")
-	procDispatchMessageW    = user32.NewProc("DispatchMessageW")
-	procGetKeyState         = user32.NewProc("GetKeyState")
-	procSendInput           = user32.NewProc("SendInput")
-	procGetModuleHandleW    = kernel32.NewProc("GetModuleHandleW")
+	procSetWindowsHookExW    = user32.NewProc("SetWindowsHookExW")
+	procCallNextHookEx       = user32.NewProc("CallNextHookEx")
+	procUnhookWindowsHookEx  = user32.NewProc("UnhookWindowsHookEx")
+	procGetMessageW          = user32.NewProc("GetMessageW")
+	procTranslateMessage     = user32.NewProc("TranslateMessage")
+	procDispatchMessageW     = user32.NewProc("DispatchMessageW")
+	procGetKeyState          = user32.NewProc("GetKeyState")
+	procSendInput            = user32.NewProc("SendInput")
+	procGetModuleHandleW     = kernel32.NewProc("GetModuleHandleW")
+	procGetForegroundWindow  = user32.NewProc("GetForegroundWindow")
+	procGetWindowThreadPID   = user32.NewProc("GetWindowThreadProcessId")
+	procAttachThreadInput    = user32.NewProc("AttachThreadInput")
+	procGetKeyboardLayoutNam = user32.NewProc("GetKeyboardLayoutNameW")
+	procGetCurrentThreadId   = kernel32.NewProc("GetCurrentThreadId")
 
 	mu       sync.Mutex
 	raltDown bool
+
+	layoutMu       sync.Mutex
+	layoutHwnd     uintptr
+	layoutIsUSIntl bool
 )
+
+// isUSInternationalActive reports whether the keyboard layout of the
+// currently focused window is Windows' built-in "United States-
+// International" layout. The result is cached per foreground window,
+// since querying it requires briefly attaching to that window's input
+// thread.
+func isUSInternationalActive() bool {
+	hwnd, _, _ := procGetForegroundWindow.Call()
+
+	layoutMu.Lock()
+	if hwnd == layoutHwnd {
+		result := layoutIsUSIntl
+		layoutMu.Unlock()
+		return result
+	}
+	layoutMu.Unlock()
+
+	isUSIntl := false
+	if hwnd != 0 {
+		targetThreadID, _, _ := procGetWindowThreadPID.Call(hwnd, 0)
+		currentThreadID, _, _ := procGetCurrentThreadId.Call()
+
+		attached := false
+		if targetThreadID != 0 && targetThreadID != currentThreadID {
+			ret, _, _ := procAttachThreadInput.Call(currentThreadID, targetThreadID, 1)
+			attached = ret != 0
+		}
+
+		var name [9]uint16 // KL_NAMELENGTH
+		procGetKeyboardLayoutNam.Call(uintptr(unsafe.Pointer(&name[0])))
+		isUSIntl = strings.EqualFold(syscall.UTF16ToString(name[:]), usInternationalKLID)
+
+		if attached {
+			procAttachThreadInput.Call(currentThreadID, targetThreadID, 0)
+		}
+	}
+
+	layoutMu.Lock()
+	layoutHwnd = hwnd
+	layoutIsUSIntl = isUSIntl
+	layoutMu.Unlock()
+
+	return isUSIntl
+}
 
 func hookProc(nCode int32, wParam, lParam uintptr) uintptr {
 	if nCode >= 0 {
@@ -169,7 +232,7 @@ func hookProc(nCode int32, wParam, lParam uintptr) uintptr {
 				raltDown = false
 			}
 			mu.Unlock()
-		} else {
+		} else if isUSInternationalActive() {
 			mu.Lock()
 			down := raltDown
 			mu.Unlock()
@@ -187,9 +250,8 @@ func hookProc(nCode int32, wParam, lParam uintptr) uintptr {
 			}
 
 			// Not an AltGr combo (or AltGr isn't held): still force
-			// undead keys to their plain character immediately, whether
-			// or not the active layout would otherwise treat them as
-			// dead keys.
+			// undead keys to their plain character immediately, instead
+			// of the dead-key wait this layout would otherwise apply.
 			if chars, ok := undeadMap[vk]; ok {
 				if wParam == wmKeyDown || wParam == wmSysKeyDown {
 					sendUnicodeChar(pickChar(chars))
