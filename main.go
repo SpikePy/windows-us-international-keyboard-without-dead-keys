@@ -60,7 +60,6 @@ const (
 	vkOem2     = 0xBF // /
 
 	wmTrayIcon  = 0x8001 // WM_APP + 1
-	wmCommand   = 0x0111
 	wmLButtonUp = 0x0202
 	wmRButtonUp = 0x0205
 
@@ -360,17 +359,6 @@ func wndProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			showTrayMenu(hwnd)
 		}
 		return 0
-	case wmCommand:
-		switch uint32(wParam) & 0xffff {
-		case cmdEnable:
-			enabled.Store(true)
-		case cmdDisable:
-			enabled.Store(false)
-		case cmdExit:
-			removeTrayIcon(hwnd)
-			procPostQuitMessage.Call(0)
-		}
-		return 0
 	}
 	ret, _, _ := procDefWindowProcW.Call(hwnd, uintptr(message), wParam, lParam)
 	return ret
@@ -425,7 +413,7 @@ func addTrayIcon(hwnd, hIcon uintptr) {
 	nid.UFlags = nifMessage | nifIcon | nifTip
 	nid.UCallbackMessage = wmTrayIcon
 	nid.HIcon = hIcon
-	tip, _ := syscall.UTF16FromString("US-International (no dead keys)")
+	tip, _ := syscall.UTF16FromString("US-International no dead keys")
 	copy(nid.SzTip[:], tip)
 	procShellNotifyIconW.Call(nimAdd, uintptr(unsafe.Pointer(&nid)))
 }
