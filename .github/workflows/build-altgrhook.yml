@@ -27,7 +27,7 @@ jobs:
         env:
           GOOS: windows
           GOARCH: amd64
-        run: go build -ldflags="-H=windowsgui" -o altgrhook.exe .
+        run: go build -buildvcs=false -ldflags="-H=windowsgui" -o altgrhook.exe .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
