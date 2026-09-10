@@ -63,16 +63,16 @@ LAYOUT ;an extra '@' at the end is a dead key
 2b Oem5 0 005c 007c -1 00ac 00a6
 
 // Bottom row
-2c Z 1 007a 005a -1 00e6 00c6
+2c Z 1 007a 005a -1 -1 -1
 2d X 1 0078 0058 -1 -1 -1
-2e C 1 0063 0043 -1 00a9 00a2
+2e C 1 0063 0043 -1 -1 -1
 2f V 1 0076 0056 -1 -1 -1
 30 B 1 0062 0042 -1 -1 -1
-31 N 1 006e 004e -1 00f1 00d1
-32 M 1 006d 004d -1 00b5 -1
-33 OemComma 0 002c 003c -1 00e7 00c7
+31 N 1 006e 004e -1 -1 -1
+32 M 1 006d 004d -1 -1 -1
+33 OemComma 0 002c 003c -1 -1 -1
 34 OemPeriod 0 002e 003e -1 -1 -1
-35 Oem2 0 002f 003f -1 00bf -1
+35 Oem2 0 002f 003f -1 -1 -1
 
 // Special keys
 39 Space 0 0020 0020 -1 0020 0020
