@@ -104,6 +104,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 5
         run: |
+          chcp 437 | Out-Null
           $work = "C:\build_amd64"
           New-Item -ItemType Directory -Path $work | Out-Null
           $layout = Resolve-Path $env:KLC_FILE
@@ -117,6 +118,7 @@ jobs:
         shell: pwsh
         timeout-minutes: 5
         run: |
+          chcp 437 | Out-Null
           $work = "C:\build_x86"
           New-Item -ItemType Directory -Path $work | Out-Null
           $layout = Resolve-Path $env:KLC_FILE
