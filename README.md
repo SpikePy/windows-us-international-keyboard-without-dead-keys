@@ -15,14 +15,9 @@ instead of the dead-key wait that layout normally uses.
 
 ## Installation
 
-Run `install-autostart.ps1` from an open PowerShell window (don't
-double-click it - the window closes immediately on completion). It
-downloads the latest release exe and copies it into your personal
+Running `install-autostart.ps1` downloads the latest release and copies it into your personal
 Startup folder (`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`),
-then starts it. No admin rights needed; re-running it just replaces the
-existing copy, so it never leaves duplicates behind. Running the exe more
-than once at a time is harmless - a second copy exits immediately if one
-is already running.
+then starts it. No admin rights needed!
 
 Run `uninstall-autostart.ps1` the same way to stop it and remove it from
 Startup.
