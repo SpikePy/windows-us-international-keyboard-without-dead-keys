@@ -9,7 +9,10 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # Pinned to windows-2022: kbdutool.exe (a ~2007-era 32-bit tool) crashes
+    # with STATUS_STACK_BUFFER_OVERRUN on the windows-latest preview image,
+    # regardless of .klc content - likely due to newer OS exploit mitigations.
+    runs-on: windows-2022
     env:
       KLC_FILE: US-AltGr-International.klc
       # Official Microsoft Download Center direct link for MSKLC 1.4.
