@@ -71,6 +71,19 @@ jobs:
           $proc = Start-Process -NoNewWindow -Wait -PassThru -FilePath $env:KBDUTOOL
           Write-Host "bare invocation exit code: $($proc.ExitCode)"
 
+      - name: Diagnose - system locale and codepage
+        shell: pwsh
+        run: |
+          Write-Host "Current culture: $([System.Globalization.CultureInfo]::CurrentCulture)"
+          Write-Host "Current UI culture: $([System.Globalization.CultureInfo]::CurrentUICulture)"
+          Get-WinSystemLocale | Format-List
+          Get-WinHomeLocation | Format-List
+          Get-Culture | Format-List
+          Write-Host "OEM/ANSI codepage (chcp):"
+          chcp
+          Write-Host "Registry ACP/OEMCP:"
+          Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage" | Select-Object ACP, OEMCP | Format-List
+
       - name: Diagnose - inspect checked-out .klc bytes for corruption
         shell: pwsh
         run: |
