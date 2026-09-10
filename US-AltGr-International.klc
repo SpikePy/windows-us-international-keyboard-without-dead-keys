@@ -1,4 +1,4 @@
-KBD USAltGr "US International - AltGr - No Dead Keys"
+KBD USAltGr "US QWERTY - AltGr International"
 
 COPYRIGHT "(c) 2017 Daniels Umanovskis, adapted 2026"
 COMPANY "Custom"
@@ -120,7 +120,7 @@ KEYNAME_EXT
 53 "Delete"
 
 DESCRIPTIONS
-0409 "US International - AltGr - No Dead Keys"
+0409 "US QWERTY - AltGr International"
 
 LANGUAGENAMES
 0409 "English (United States)"
