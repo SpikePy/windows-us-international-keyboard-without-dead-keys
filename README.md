@@ -35,3 +35,21 @@ To install on Windows 11: download and unzip the artifact, then run
 `install-layout.ps1` from an elevated (Run as Administrator) PowerShell prompt.
 Sign out and back in, then add the keyboard under Settings > Time & Language >
 Language & region > English (United States) > Language options > Add a keyboard.
+
+## No Administrator rights?
+
+A real keyboard layout DLL has to live in `System32` and the registry, both
+of which require admin. `tools/altgrhook` is a small, pure-Go background
+program (no admin needed) implementing the same "AltGr for accented
+characters, no dead keys" behavior on top of whatever layout is already
+active: hold the physical Right Alt key and press a mapped letter/digit/
+symbol and the character appears immediately. It uses a low-level keyboard
+hook (`WH_KEYBOARD_LL`) to intercept just those key combinations and
+`SendInput` to inject the Unicode character.
+
+`.github/workflows/build-altgrhook.yml` cross-compiles it (plain `go build`,
+`GOOS=windows`, no cgo) and uploads it as the `AltGr-background-helper`
+artifact. Download `altgrhook.exe` and just run it - no installation, no
+console window. Stop it via Task Manager when you're done, or add a
+shortcut to it in your Startup folder (`Win+R` -> `shell:startup`, no admin
+needed) to have it start automatically at login.

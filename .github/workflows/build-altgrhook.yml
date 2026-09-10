@@ -1,0 +1,34 @@
+name: Build AltGr background helper
+
+on:
+  push:
+    paths:
+      - "tools/altgrhook/**"
+      - ".github/workflows/build-altgrhook.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    # Pure Go, no cgo - cross-compiles to Windows trivially on any OS.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: "1.24"
+
+      - name: Build altgrhook.exe
+        working-directory: tools/altgrhook
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: go build -ldflags="-H=windowsgui" -o altgrhook.exe .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: AltGr-background-helper
+          path: tools/altgrhook/altgrhook.exe
