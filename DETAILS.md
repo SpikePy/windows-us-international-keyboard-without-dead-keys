@@ -27,7 +27,7 @@ Booleans take the Go flag form: `-start-enabled=false` to turn one off.
 |------|--------------|
 | `-mode install\|uninstall` | Skip the dialog and run that action - for scripting. Progress goes to the console it was started from (or wherever its output is redirected), and the exit code is non-zero on failure. |
 | `-install-dir <dir>` | Install into (or remove from) this directory instead of `%LOCALAPPDATA%\UndeadKeys`. |
-| `-no-launch` | Install/update without starting it now. Install only. |
+| `-no-launch` | Don't start it after installing, even with `autostart` on. Install only. |
 | `-no-autostart` | Leave the Startup shortcut as it is instead of applying the `autostart` setting. Install only. |
 | `-keep-files` | Uninstall only: remove the Startup shortcut and stop the process, but leave the installed files. |
 
@@ -36,10 +36,15 @@ Opened without `-mode`, Setup shows its dialog with **Install/Update**
 **Uninstall** (remove the program, its shortcut and its settings) and
 **Close** (change nothing). If nothing is chosen within 5 seconds, it runs
 Install/Update on its own - so double-clicking Setup and walking away
-still installs or updates UndeadKeys - and a line on the first page
-counts down to that. When such an unattended install succeeds, the result
-page counts down too and closes the dialog after 3 seconds. A run you
-started yourself, and any failed run, stays open until you close it.
+still installs or updates UndeadKeys - and the first page counts down to
+that ("Installing/updating automatically in N s..."). After any
+successful install, update or uninstall, the result page counts down
+("Closing in N s...") and closes the dialog after 5 seconds; Close still
+exits at once. A failed run never closes by itself, so the error can be
+read. `-mode` runs have no countdowns.
+
+Install/Update makes the Startup shortcut match `autostart` and starts
+UndeadKeys only if `autostart` is on.
 
 ## Configuration
 
@@ -272,9 +277,10 @@ Setup's window is a Windows task dialog (`TaskDialogIndirect`), so it
 needs no GUI toolkit and draws nothing itself but the tool's icon. The
 first page asks the question and offers Install/Update, Uninstall and
 Close (Close is `IDCANCEL`, so Escape and the title bar's X do the same),
-with the dialog's timer counting down to the automatic Install/Update,
-and the result page of an unattended install counting down to closing
-(both countdown texts are in `internal/setup/countdown.go`, tested).
+with the dialog's timer (`TDF_CALLBACK_TIMER`) counting down to the
+automatic Install/Update, and the result page of a successful action
+counting down to closing (both countdowns are in
+`internal/setup/countdown.go`, tested).
 Choosing navigates to a progress page - a marquee bar, the current step as
 its text, Close disabled - and then to a result page saying what to do
 next, or the error. The action runs on a worker goroutine that talks to

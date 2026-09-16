@@ -8,12 +8,12 @@ func TestCountdown(t *testing.T) {
 		want      string
 		due       bool
 	}{
-		{0, "Install/Update starts on its own in 5 s unless you choose.", false},
-		{999, "Install/Update starts on its own in 5 s unless you choose.", false},
-		{1000, "Install/Update starts on its own in 4 s unless you choose.", false},
-		{4999, "Install/Update starts on its own in 1 s unless you choose.", false},
-		{5000, "Installing now...", true},
-		{60000, "Installing now...", true},
+		{0, "Installing/updating automatically in 5 s...", false},
+		{999, "Installing/updating automatically in 5 s...", false},
+		{1000, "Installing/updating automatically in 4 s...", false},
+		{4999, "Installing/updating automatically in 1 s...", false},
+		{5000, "Installing/updating now...", true},
+		{60000, "Installing/updating now...", true},
 	}
 	for _, tt := range tests {
 		got, due := Countdown(tt.elapsedMs)
@@ -29,10 +29,10 @@ func TestCloseCountdown(t *testing.T) {
 		want      string
 		due       bool
 	}{
-		{0, "This window closes in 3 s.", false},
-		{1500, "This window closes in 2 s.", false},
-		{2999, "This window closes in 1 s.", false},
-		{3000, "Closing...", true},
+		{0, "Closing in 5 s...", false},
+		{1500, "Closing in 4 s...", false},
+		{4999, "Closing in 1 s...", false},
+		{5000, "Closing now...", true},
 	}
 	for _, tt := range tests {
 		got, due := CloseCountdown(tt.elapsedMs)

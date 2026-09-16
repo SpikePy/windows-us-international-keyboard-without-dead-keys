@@ -62,7 +62,7 @@ func latestVersion() (string, error) {
 // InstallOptions configures Install.
 type InstallOptions struct {
 	InstallDir  string // defaults to %LOCALAPPDATA%\UndeadKeys if empty
-	NoLaunch    bool   // install/update without starting it now
+	NoLaunch    bool   // don't start it now, even with autostart on
 	NoAutostart bool   // leave the Startup shortcut as it is
 	// Progress, if set, receives a short sentence as each step begins.
 	Progress func(step string)
@@ -70,7 +70,8 @@ type InstallOptions struct {
 
 // Install downloads the latest released UndeadKeys.exe, installs it under
 // the current user's %LOCALAPPDATA%, makes the Startup shortcut match
-// config.yaml's autostart setting, and (re)starts it - terminating any
+// config.yaml's autostart setting, and - if autostart is on - (re)starts
+// it. It terminates any
 // already-running copy first so the file can be replaced and so at most
 // one copy is ever running. Safe to re-run to update in place: it ends up
 // with at most one Startup shortcut and exactly one running instance (the
@@ -112,10 +113,10 @@ func Install(opts InstallOptions) (string, error) {
 		return "", fmt.Errorf("installing: %w", err)
 	}
 
+	// A config.yaml that can't be read still yields the defaults, which
+	// have autostart on.
+	cfg, _ := config.Load()
 	if !opts.NoAutostart {
-		// A config.yaml that can't be read still yields the defaults,
-		// which have autostart on.
-		cfg, _ := config.Load()
 		if cfg.Autostart {
 			progress("Adding it to Startup...")
 		} else {
@@ -126,7 +127,7 @@ func Install(opts InstallOptions) (string, error) {
 		}
 	}
 
-	if !opts.NoLaunch {
+	if !opts.NoLaunch && cfg.Autostart {
 		progress("Starting UndeadKeys...")
 		if err := exec.Command(targetPath).Start(); err != nil {
 			return "", fmt.Errorf("starting %s: %w", targetPath, err)

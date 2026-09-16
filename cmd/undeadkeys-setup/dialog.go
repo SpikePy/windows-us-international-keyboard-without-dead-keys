@@ -40,7 +40,6 @@ const (
 	tdmSetElementText        = wmUser + 108
 	tdmClickButton           = wmUser + 102
 	tdmEnableButton          = wmUser + 111
-	tdmUpdateElementText     = wmUser + 114
 
 	tdnNavigated     = 1
 	tdnButtonClicked = 2
@@ -70,9 +69,9 @@ const (
 	pageChoose   = 0
 	pageProgress = 1
 	pageDone     = 2
-	// pageDoneAuto is the result of a successful unattended install,
-	// which closes itself after setup.AutoCloseSeconds.
-	pageDoneAuto = 3
+	// pageClosing is the result of a successful action, which closes
+	// itself after setup.AutoCloseSeconds.
+	pageClosing = 3
 )
 
 const title = "UndeadKeys Setup"
@@ -97,10 +96,10 @@ var (
 	shownCountdown string
 	timerRestart   bool
 
-	// doneContent is the closing page's text above its countdown line. The
-	// worker sets it just before navigating there, and the dialog's thread
-	// reads it afterwards.
-	doneContent atomic.Value
+	// closingContent is the closing page's text above its countdown line.
+	// The worker sets it just before navigating there, and the dialog's
+	// thread reads it afterwards.
+	closingContent atomic.Value
 
 	// kept holds every page handed to Windows, so the memory its raw
 	// pointers refer to stays alive while the dialog may still use it.
@@ -246,7 +245,7 @@ func dialogProc(hwnd, msg, wParam, lParam, refData uintptr) uintptr {
 		case pageProgress:
 			win32.SendMessage(hwnd, tdmSetProgressBarMarquee, 1, 0)
 			win32.SendMessage(hwnd, tdmEnableButton, idClose, 0)
-		case pageDoneAuto:
+		case pageClosing:
 			timerRestart = true
 			shownCountdown, _ = setup.CloseCountdown(0)
 		}
@@ -258,11 +257,11 @@ func dialogProc(hwnd, msg, wParam, lParam, refData uintptr) uintptr {
 			// Run Install/Update once nobody has chosen in time.
 			text, due := setup.Countdown(uint32(wParam))
 			if due {
-				start(hwnd, idInstall, true)
+				start(hwnd, idInstall)
 				break
 			}
 			updateCountdown(hwnd, firstContent, text)
-		case pageDoneAuto:
+		case pageClosing:
 			if timerRestart {
 				timerRestart = false
 				return 1
@@ -272,13 +271,13 @@ func dialogProc(hwnd, msg, wParam, lParam, refData uintptr) uintptr {
 				win32.SendMessage(hwnd, tdmClickButton, idClose, 0)
 				break
 			}
-			base, _ := doneContent.Load().(string)
+			base, _ := closingContent.Load().(string)
 			updateCountdown(hwnd, base, text)
 		}
 	case tdnButtonClicked:
 		switch wParam {
 		case idInstall, idUninstall:
-			start(hwnd, int(wParam), false)
+			start(hwnd, int(wParam))
 			return sFalse // keep the dialog open
 		case idClose:
 			if refData == pageProgress {
@@ -290,21 +289,20 @@ func dialogProc(hwnd, msg, wParam, lParam, refData uintptr) uintptr {
 }
 
 // updateCountdown shows text as the countdown line under base, if it
-// changed. Every second's line has the same length, so updating in place
-// (without the dialog resizing) is enough.
+// changed.
 func updateCountdown(hwnd uintptr, base, text string) {
 	if text == shownCountdown {
 		return
 	}
 	shownCountdown = text
-	setElement(hwnd, tdmUpdateElementText, base+text)
+	setContent(hwnd, base+text)
 }
 
 // start switches to the progress page and runs the chosen action on a
-// separate goroutine, so the dialog keeps painting meanwhile. auto is true
-// when the countdown chose, not the user. The worker only talks to the
-// dialog through SendMessage, which Windows hands to the dialog's thread.
-func start(hwnd uintptr, choice int, auto bool) {
+// separate goroutine, so the dialog keeps painting meanwhile. The worker
+// only talks to the dialog through SendMessage, which Windows hands to the
+// dialog's thread.
+func start(hwnd uintptr, choice int) {
 	verb, action := "Installing", "install"
 	if choice == idUninstall {
 		verb, action = "Removing", "uninstall"
@@ -325,14 +323,14 @@ func start(hwnd uintptr, choice int, auto bool) {
 		tag, err := run(action, dialogOpts, func(step string) { setContent(hwnd, step) })
 		failed.Store(err != nil)
 		pg := resultPage(choice, tag, err)
-		if auto && err == nil {
-			// Nobody was there to choose, so likely nobody will close it
-			// either: count down and close.
-			doneContent.Store(pg.content + "\n\n")
+		if err == nil {
+			// Done: count down and close. A failure stays open so the
+			// error can be read.
+			closingContent.Store(pg.content + "\n\n")
 			text, _ := setup.CloseCountdown(0)
 			pg.content += "\n\n" + text
 			pg.flags |= tdfCallbackTimer
-			pg.kind = pageDoneAuto
+			pg.kind = pageClosing
 		}
 		navigate(hwnd, pg)
 	}()
@@ -347,16 +345,16 @@ func resultPage(choice int, tag string, err error) page {
 		pg.instruction = "Setup didn't finish"
 		pg.content = err.Error()
 	case choice == idInstall:
-		cfg, _ := config.Load()
+		if cfg, _ := config.Load(); !cfg.Autostart {
+			pg.instruction = fmt.Sprintf("UndeadKeys %s is installed", tag)
+			pg.content = "Autostart is off in its settings, so it wasn't started and won't start when you sign in. " +
+				"To use it, open UndeadKeys.exe in %LOCALAPPDATA%\\UndeadKeys - or set autostart: true in its config.yaml and run Setup again."
+			break
+		}
 		pg.instruction = fmt.Sprintf("UndeadKeys %s is running", tag)
 		pg.content = "Look for the Á key icon in the notification area (it may be behind the ^ arrow). " +
 			"Hold AltGr and press a letter to type its accented form.\n\n" +
-			"Right-click the icon to pause it, change its settings or exit."
-		if cfg.Autostart {
-			pg.content += " It starts again whenever you sign in."
-		} else {
-			pg.content += " It won't start by itself when you sign in: autostart is off in its settings."
-		}
+			"Right-click the icon to pause it, change its settings or exit. It starts again whenever you sign in."
 	default:
 		pg.instruction = "UndeadKeys has been removed"
 		pg.content = "Its program, Startup shortcut and settings are gone."
@@ -368,17 +366,12 @@ func navigate(hwnd uintptr, pg page) {
 	win32.SendMessage(hwnd, tdmNavigatePage, 0, pg.pack().addr())
 }
 
-func setContent(hwnd uintptr, text string) { setElement(hwnd, tdmSetElementText, text) }
-
-// setElement replaces the content text with msg, which is
-// TDM_SET_ELEMENT_TEXT (may resize the dialog) or TDM_UPDATE_ELEMENT_TEXT
-// (doesn't).
-func setElement(hwnd uintptr, msg uint32, text string) {
+func setContent(hwnd uintptr, text string) {
 	u, err := windows.UTF16PtrFromString(text)
 	if err != nil {
 		return
 	}
-	win32.SendMessage(hwnd, msg, tdeContent, uintptr(unsafe.Pointer(u)))
+	win32.SendMessage(hwnd, tdmSetElementText, tdeContent, uintptr(unsafe.Pointer(u)))
 	runtime.KeepAlive(u)
 }
 

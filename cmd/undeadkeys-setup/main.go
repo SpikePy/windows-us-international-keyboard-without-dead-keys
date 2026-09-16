@@ -35,7 +35,7 @@ type options struct {
 func main() {
 	mode := flag.String("mode", "", "run without the dialog: install or uninstall")
 	installDir := flag.String("install-dir", "", "directory to install into/remove from (default: %LOCALAPPDATA%\\UndeadKeys)")
-	noLaunch := flag.Bool("no-launch", false, "install/update without starting it now (install only)")
+	noLaunch := flag.Bool("no-launch", false, "don't start it after installing, even with autostart on (install only)")
 	noAutostart := flag.Bool("no-autostart", false, "leave the Startup shortcut as it is instead of applying config.yaml's autostart setting (install only)")
 	keepFiles := flag.Bool("keep-files", false, "remove the shortcut and stop the program, but don't delete the installed files (uninstall only)")
 	flag.Parse()

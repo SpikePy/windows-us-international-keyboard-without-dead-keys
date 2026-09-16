@@ -20,7 +20,8 @@ Download `Setup_UndeadKeys.exe` from the
 and run it, then click **Install/Update** (or just wait - it installs on
 its own after 5 seconds). It puts `UndeadKeys.exe` into
 `%LOCALAPPDATA%\UndeadKeys`, starts it, and adds a shortcut to your own
-Startup folder so it comes back at login. Run it again any time and click
+Startup folder so it comes back at login (unless you turned `autostart`
+off - then it neither starts it nor adds the shortcut). Run it again any time and click
 **Install/Update** to get the latest release.
 
 To remove it, run the same `Setup_UndeadKeys.exe` and click **Uninstall**.
@@ -30,7 +31,7 @@ To remove it, run the same `Setup_UndeadKeys.exe` and click **Uninstall**.
 | Program | What it is |
 |---------|------------|
 | `UndeadKeys.exe` | The background program itself. No window - it lives in the notification area. Left-click the tray icon to pause and resume it, right-click for Enable, Disable, Configure and Exit. |
-| `Setup_UndeadKeys.exe` | Installs, updates and uninstalls the above, from a small Windows dialog with **Install/Update**, **Uninstall** and **Close**. If you don't choose within 5 seconds, it runs Install/Update on its own and closes itself 3 seconds after it succeeds. |
+| `Setup_UndeadKeys.exe` | Installs, updates and uninstalls the above, from a small Windows dialog with **Install/Update**, **Uninstall** and **Close**. If you don't choose within 5 seconds, it runs Install/Update on its own; after a successful run it closes itself 5 seconds later. |
 
 ## Settings
 
