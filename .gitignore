@@ -1,1 +1,6 @@
-us-international-without-dead-keys.exe
+UndeadKeys.exe
+Setup_UndeadKeys.exe
+*.log
+
+# Local Claude Code settings
+.claude/settings.local.json
