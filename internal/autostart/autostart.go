@@ -1,10 +1,16 @@
 //go:build windows
 
-package setup
+// Package autostart manages the shortcut in the user's own Startup folder
+// that starts UndeadKeys at sign-in, keeping it in line with the autostart
+// setting. It is per-user, so nothing here needs administrator rights.
+// Both Setup and the program itself call Sync, so an edited config.yaml
+// takes effect on the next start without re-running Setup.
+package autostart
 
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"syscall"
 	"unsafe"
@@ -12,10 +18,56 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Autostart is a shortcut in the user's own Startup folder, created
-// through the shell's IShellLink COM object - the same file Explorer
-// writes when you drag a program in there. It is per-user, so nothing
-// here needs administrator rights.
+const (
+	linkName = "UndeadKeys.lnk"
+
+	// legacyExeName is what versions before v1.2.0 autostarted: the exe
+	// itself, copied straight into the Startup folder. It is only ever
+	// removed now, so the old and the new copy can't both start.
+	legacyExeName = "us-international-without-dead-keys.exe"
+
+	description = "UndeadKeys - AltGr accents without dead keys"
+)
+
+// Sync makes the user's Startup folder match the autostart setting: a
+// shortcut that starts target when enabled, none when not. Creating
+// replaces an existing shortcut rather than adding a second one, and
+// removing one that isn't there is not an error.
+func Sync(enabled bool, target string) error {
+	dir, err := windows.KnownFolderPath(windows.FOLDERID_Startup, 0)
+	if err != nil {
+		return fmt.Errorf("locating the Startup folder: %w", err)
+	}
+	if err := syncIn(dir, enabled, target); err != nil {
+		return err
+	}
+	return removeFile(filepath.Join(dir, legacyExeName))
+}
+
+// Remove deletes the shortcut, whatever the setting says - for uninstall.
+func Remove() error { return Sync(false, "") }
+
+// syncIn does the file work in dir.
+func syncIn(dir string, enabled bool, target string) error {
+	link := filepath.Join(dir, linkName)
+	if !enabled {
+		return removeFile(link)
+	}
+	if err := createShortcut(link, target, description); err != nil {
+		return fmt.Errorf("creating %s: %w", link, err)
+	}
+	return nil
+}
+
+func removeFile(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("removing %s: %w", path, err)
+	}
+	return nil
+}
+
+// The shortcut is written through the shell's IShellLink COM object - the
+// same .lnk file Explorer writes when you drag a program into the folder.
 var (
 	modOle32             = windows.NewLazySystemDLL("ole32.dll")
 	procCoCreateInstance = modOle32.NewProc("CoCreateInstance")

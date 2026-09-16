@@ -44,7 +44,7 @@ jobs:
           CGO_ENABLED: 0
 
       - name: Build Setup_UndeadKeys.exe
-        run: go build -trimpath -ldflags "-H=windowsgui -s -w" -o Setup_UndeadKeys.exe ./cmd/undeadkeys-setup
+        run: go build -trimpath -ldflags "-H=windowsgui -s -w -X main.version=${{ github.ref_name }}" -o Setup_UndeadKeys.exe ./cmd/undeadkeys-setup
         env:
           GOOS: windows
           GOARCH: amd64

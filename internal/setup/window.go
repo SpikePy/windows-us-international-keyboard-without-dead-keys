@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package setup
 
 import (
 	"fmt"
@@ -11,16 +11,18 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	"windows-us-international-keyboard-without-dead-keys/internal/config"
 	"windows-us-international-keyboard-without-dead-keys/internal/keyicon"
-	"windows-us-international-keyboard-without-dead-keys/internal/setup"
-	"windows-us-international-keyboard-without-dead-keys/internal/setupflow"
+	"windows-us-international-keyboard-without-dead-keys/internal/setupmenu"
 	"windows-us-international-keyboard-without-dead-keys/internal/win32"
 )
 
-// The window is plain Win32: a white content area with the icon, title
-// and status, over a grey footer holding the buttons - the look of a
-// Windows task dialog. The manifest embedded next to this file turns on
-// the modern control styles and per-monitor DPI awareness.
+// The window is plain Win32 controls on a plain window: the tool's icon,
+// name and version, a line saying what will happen, a progress bar while
+// it works, and the buttons along the bottom. The manifest embedded in
+// Setup's .syso turns on the modern control styles and per-monitor DPI
+// awareness; what the window shows and when it acts is decided in
+// internal/setupmenu.
 
 var (
 	modUser32   = windows.NewLazySystemDLL("user32.dll")
@@ -34,11 +36,9 @@ var (
 	procUpdateWindow               = modUser32.NewProc("UpdateWindow")
 	procSetWindowPos               = modUser32.NewProc("SetWindowPos")
 	procMoveWindow                 = modUser32.NewProc("MoveWindow")
-	procGetClientRect              = modUser32.NewProc("GetClientRect")
 	procInvalidateRect             = modUser32.NewProc("InvalidateRect")
 	procBeginPaint                 = modUser32.NewProc("BeginPaint")
 	procEndPaint                   = modUser32.NewProc("EndPaint")
-	procFillRect                   = modUser32.NewProc("FillRect")
 	procGetSysColorBrush           = modUser32.NewProc("GetSysColorBrush")
 	procGetSysColor                = modUser32.NewProc("GetSysColor")
 	procDrawIconEx                 = modUser32.NewProc("DrawIconEx")
@@ -57,7 +57,6 @@ var (
 	procSetTextColor               = modGdi32.NewProc("SetTextColor")
 	procSetBkMode                  = modGdi32.NewProc("SetBkMode")
 	procCreateFontIndirectW        = modGdi32.NewProc("CreateFontIndirectW")
-	procCreateSolidBrush           = modGdi32.NewProc("CreateSolidBrush")
 	procInitCommonControlsEx       = modComctl32.NewProc("InitCommonControlsEx")
 )
 
@@ -103,7 +102,6 @@ const (
 	wmRButtonDown    = 0x0204
 	wmMouseWheel     = 0x020A
 	wmNCLButtonDown  = 0x00A1
-	wmPrintClient    = 0x0318
 	wmDpiChanged     = 0x02E0
 	dmGetDefID       = 0x0400 // WM_USER
 	bmSetStyle       = 0x00F4
@@ -120,7 +118,6 @@ const (
 	swpNoActivate = 0x0010
 
 	colorWindow   = 5
-	colorBtnFace  = 15
 	colorGrayText = 17
 
 	transparent = 1
@@ -189,10 +186,11 @@ type initCommonControlsEx struct {
 // window's actual DPI.
 const (
 	clientW   = 440
-	clientH   = 226
-	margin    = 24
+	clientH   = 212
+	margin    = 20
 	iconPx    = 40
-	footerH   = 56
+	textGap   = 14 // between the icon and the title
+	statusH   = 64 // room for three lines of error text
 	buttonH   = 30
 	buttonW   = 104
 	primaryW  = 118
@@ -203,12 +201,11 @@ const (
 type resources struct {
 	bodyFont, titleFont            uintptr
 	headerIcon, smallIcon, bigIcon uintptr
-	footerBrush, lineBrush         uintptr
 }
 
 // free releases them all. Safe on zero handles.
 func (r resources) free() {
-	for _, h := range []uintptr{r.bodyFont, r.titleFont, r.footerBrush, r.lineBrush} {
+	for _, h := range []uintptr{r.bodyFont, r.titleFont} {
 		win32.DeleteObject(h)
 	}
 	for _, h := range []uintptr{r.headerIcon, r.smallIcon, r.bigIcon} {
@@ -218,6 +215,7 @@ func (r resources) free() {
 
 // update is one message from the worker goroutine to the window.
 type update struct {
+	latest  string // the newest release's tag, from the lookup at start
 	step    string
 	done    bool
 	version string
@@ -232,10 +230,10 @@ type window struct {
 	resources
 	defaultID int
 
-	model     setupflow.Model
-	view      setupflow.View
-	install   setup.InstallOptions
-	uninstall setup.UninstallOptions
+	model     setupmenu.Model
+	view      setupmenu.View
+	install   InstallOptions
+	uninstall UninstallOptions
 	startPt   point
 
 	mu      sync.Mutex
@@ -255,8 +253,9 @@ var wndProc = syscall.NewCallback(func(hwnd uintptr, msg uint32, wParam, lParam 
 	return win32.DefWindowProc(hwnd, msg, wParam, lParam)
 })
 
-// runWindow shows the setup window and returns once it is closed.
-func runWindow(install setup.InstallOptions, uninstall setup.UninstallOptions) error {
+// RunWindow shows the setup window and returns once it is closed. version
+// is Setup's own version, shown until the newest release is looked up.
+func RunWindow(install InstallOptions, uninstall UninstallOptions, version string) error {
 	// Window, timers and messages belong to the thread that created them.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -265,10 +264,13 @@ func runWindow(install setup.InstallOptions, uninstall setup.UninstallOptions) e
 	icc.dwSize = uint32(unsafe.Sizeof(icc))
 	procInitCommonControlsEx.Call(uintptr(unsafe.Pointer(&icc)))
 
+	// Reading the setting also creates config.yaml with its defaults if
+	// there is none yet, which the installed program would do anyway.
+	cfg, _ := config.Load()
 	w := &window{
 		install:   install,
 		uninstall: uninstall,
-		model:     setupflow.New(setup.IsInstalled(install.InstallDir)),
+		model:     setupmenu.New(IsInstalled(install.InstallDir), cfg.Autostart, version),
 	}
 	w.install.Progress = func(step string) { w.post(update{step: step}) }
 	w.uninstall.Progress = w.install.Progress
@@ -286,6 +288,15 @@ func runWindow(install setup.InstallOptions, uninstall setup.UninstallOptions) e
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&w.startPt)))
 	procSetTimer.Call(w.hwnd, tickTimer, 1000, 0)
 
+	// Look up the newest release in the background, so the window can say
+	// which version it will install. A failure here is not worth showing:
+	// Install looks it up again and reports any problem then.
+	go func() {
+		if tag, err := LatestVersion(); err == nil {
+			w.post(update{latest: tag})
+		}
+	}()
+
 	for {
 		m, ok := win32.GetMessage()
 		if !ok {
@@ -299,8 +310,8 @@ func runWindow(install setup.InstallOptions, uninstall setup.UninstallOptions) e
 	}
 }
 
-// windowBackground is the brush the whole client area is cleared to: the
-// white of a window. The footer is painted over it.
+// windowBackground is the brush the client area is cleared to: the usual
+// window color.
 func windowBackground() syscall.Handle {
 	r, _, _ := procGetSysColorBrush.Call(colorWindow)
 	return syscall.Handle(r)
@@ -391,14 +402,8 @@ func (w *window) applyDPI(dpi uint32) {
 	procSendMessageW.Call(w.hwnd, wmSetIcon, iconSmall, w.smallIcon)
 	procSendMessageW.Call(w.hwnd, wmSetIcon, iconBig, w.bigIcon)
 
-	// Windows 11 dialog footer colors.
-	w.footerBrush, _, _ = procCreateSolidBrush.Call(rgb(243, 243, 243))
-	w.lineBrush, _, _ = procCreateSolidBrush.Call(rgb(229, 229, 229))
-
 	w.layout()
 }
-
-func rgb(r, g, b byte) uintptr { return uintptr(r) | uintptr(g)<<8 | uintptr(b)<<16 }
 
 // layout sizes the window for its content and places every control.
 func (w *window) layout() {
@@ -408,17 +413,20 @@ func (w *window) layout() {
 	procSetWindowPos.Call(w.hwnd, 0, 0, 0, uintptr(wr.Right-wr.Left), uintptr(wr.Bottom-wr.Top), swpNoMove|swpNoZOrder|swpNoActivate)
 
 	s := w.scale
-	textX := s(margin + iconPx + 16)
+	textX := s(margin + iconPx + textGap)
 	textW := s(clientW-margin) - textX
 	move := func(h uintptr, x, y, width, height int32) {
 		procMoveWindow.Call(h, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 1)
 	}
-	move(w.title, textX, s(margin-2), textW, s(30))
-	move(w.heading, textX, s(margin+30), textW, s(20))
-	move(w.status, s(margin), s(margin+iconPx+22), s(clientW-2*margin), s(clientH-footerH-margin-iconPx-22-20))
-	move(w.progress, s(margin), s(clientH-footerH-14), s(clientW-2*margin), s(4))
+	move(w.title, textX, s(margin-4), textW, s(30))
+	move(w.heading, textX, s(margin+24), textW, s(20))
 
-	by := s(clientH - footerH + (footerH-buttonH)/2)
+	statusY := margin + iconPx + 16
+	move(w.status, s(margin), s(statusY), s(clientW-2*margin), s(statusH))
+	buttonY := clientH - margin - buttonH
+	move(w.progress, s(margin), s(buttonY-14), s(clientW-2*margin), s(4))
+
+	by := s(buttonY)
 	closeX := s(clientW - margin - buttonW)
 	move(w.closeBtn, closeX, by, s(buttonW), s(buttonH))
 	move(w.primary, closeX-s(buttonGap)-s(primaryW), by, s(primaryW), s(buttonH))
@@ -455,9 +463,9 @@ func (w *window) handle(hwnd uintptr, msg uint32, wParam, lParam uintptr) (uintp
 	case wmCommand:
 		switch int(wParam & 0xFFFF) {
 		case idPrimary:
-			w.act(w.model.Choose(setupflow.Install))
+			w.act(w.model.Choose(setupmenu.Install))
 		case idUninstall:
-			w.act(w.model.Choose(setupflow.Uninstall))
+			w.act(w.model.Choose(setupmenu.Uninstall))
 		case idClose:
 			w.close()
 		}
@@ -483,11 +491,6 @@ func (w *window) handle(hwnd uintptr, msg uint32, wParam, lParam uintptr) (uintp
 		procEndPaint.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 		return 0, true
 
-	case wmPrintClient:
-		// Themed buttons ask their parent to draw what is behind them.
-		w.paint(wParam)
-		return 0, true
-
 	case wmCtlColorStatic:
 		procSetBkMode.Call(wParam, transparent)
 		switch {
@@ -501,7 +504,8 @@ func (w *window) handle(hwnd uintptr, msg uint32, wParam, lParam uintptr) (uintp
 		return r, true
 
 	case wmCtlColorBtn:
-		return w.footerBrush, true
+		r, _, _ := procGetSysColorBrush.Call(colorWindow)
+		return r, true
 
 	case wmDpiChanged:
 		// Resize for the new DPI, then move to where Windows suggests.
@@ -522,16 +526,8 @@ func (w *window) handle(hwnd uintptr, msg uint32, wParam, lParam uintptr) (uintp
 	return 0, false
 }
 
-// paint draws the header icon and the grey footer band.
+// paint draws the tool's icon - the only thing the window draws itself.
 func (w *window) paint(hdc uintptr) {
-	var cr rect
-	procGetClientRect.Call(w.hwnd, uintptr(unsafe.Pointer(&cr)))
-	footerTop := cr.Bottom - w.scale(footerH)
-	footer := rect{Left: 0, Top: footerTop, Right: cr.Right, Bottom: cr.Bottom}
-	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&footer)), w.footerBrush)
-	line := rect{Left: 0, Top: footerTop, Right: cr.Right, Bottom: footerTop + max(1, w.scale(1))}
-	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), w.lineBrush)
-
 	const diNormal = 3
 	size := w.scale(iconPx)
 	procDrawIconEx.Call(hdc, uintptr(w.scale(margin)), uintptr(w.scale(margin)), w.headerIcon, uintptr(size), uintptr(size), 0, 0, diNormal)
@@ -558,19 +554,19 @@ func (w *window) noticeUser(m win32.Msg) {
 }
 
 // act applies a model transition and carries out its command.
-func (w *window) act(m setupflow.Model, c setupflow.Command) {
+func (w *window) act(m setupmenu.Model, c setupmenu.Command) {
 	w.model = m
 	switch c {
-	case setupflow.StartInstall:
+	case setupmenu.StartInstall:
 		w.startWorker(func() update {
-			version, err := setup.Install(w.install)
+			version, err := Install(w.install)
 			return update{done: true, version: version, err: err}
 		})
-	case setupflow.StartUninstall:
+	case setupmenu.StartUninstall:
 		w.startWorker(func() update {
-			return update{done: true, err: setup.Uninstall(w.uninstall)}
+			return update{done: true, err: Uninstall(w.uninstall)}
 		})
-	case setupflow.Close:
+	case setupmenu.Close:
 		w.close()
 		return
 	}
@@ -605,8 +601,10 @@ func (w *window) drain() {
 	w.pending = nil
 	w.mu.Unlock()
 	for _, u := range updates {
-		if u.done {
-			w.model = w.model.Finished(u.version, u.err, setup.IsInstalled(w.install.InstallDir))
+		if u.latest != "" {
+			w.model = w.model.LatestKnown(u.latest)
+		} else if u.done {
+			w.model = w.model.Finished(u.version, u.err, IsInstalled(w.install.InstallDir))
 		} else {
 			w.model = w.model.Progress(u.step)
 		}
@@ -626,6 +624,7 @@ func (w *window) render() {
 	v := w.model.View()
 	w.view = v
 
+	setText(w.title, v.Title)
 	setText(w.heading, v.Heading)
 	setText(w.status, v.Status)
 	setText(w.primary, v.Primary)
@@ -676,3 +675,6 @@ func show(h uintptr, on bool) {
 	}
 	procShowWindow.Call(h, cmd)
 }
+
+// rgb is a COLORREF.
+func rgb(r, g, b byte) uintptr { return uintptr(r) | uintptr(g)<<8 | uintptr(b)<<16 }

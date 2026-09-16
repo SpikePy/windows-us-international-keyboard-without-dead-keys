@@ -1,25 +1,16 @@
 // Package keyicon draws the glyph shared by the runtime tray icon
 // (internal/tray) and the generated .exe file icon (tools/genicon), so
 // both always show the exact same picture: a rounded keycap with an "Á"
-// on it. Everything is rendered from shapes and a real typeface with
-// anti-aliasing, at whatever size is asked for, so the icon stays smooth
-// on any display scaling. It has no OS dependency and builds anywhere.
+// on it. Everything is rendered from outlines with anti-aliasing, at
+// whatever size is asked for, so the icon stays smooth on any display
+// scaling. It has no OS dependency and builds anywhere.
 package keyicon
 
 import (
 	"image"
 	"image/color"
 	"math"
-	"sync"
-
-	"golang.org/x/image/font"
-	"golang.org/x/image/font/gofont/gobold"
-	"golang.org/x/image/font/opentype"
-	"golang.org/x/image/math/fixed"
 )
-
-// Letter is the character shown on the keycap.
-const Letter = "Á"
 
 // Colors of the glyph in its two states. Disabled is the same glyph in
 // grey with a red strike across it - the conventional "off" cue - so it
@@ -155,81 +146,65 @@ func inRoundedRect(x, y, left, top, right, bottom, r float64) bool {
 	return (x-cx)*(x-cx)+(y-cy)*(y-cy) <= r*r
 }
 
-var (
-	parsedFont     *opentype.Font
-	parsedFontErr  error
-	parsedFontOnce sync.Once
-)
+// point is a position in letter space: x from 0 (left) to 1 (right),
+// y from 0 (the top of the A) down to 1 (the baseline), with the accent
+// above the A at negative y.
+type point struct{ x, y float64 }
 
-// letterFont returns the typeface the letter is set in: Go Bold, a clean
-// humanist sans that is compiled into the program, so the icon looks the
-// same on every machine and needs no font files.
-func letterFont() (*opentype.Font, error) {
-	parsedFontOnce.Do(func() {
-		parsedFont, parsedFontErr = opentype.Parse(gobold.TTF)
-	})
-	return parsedFont, parsedFontErr
+// letterOutlines is the "Á" as closed outlines, filled with the even-odd
+// rule: a bold, flat-topped sans-serif A, the triangular counter above its
+// crossbar cut out of it, and an acute accent leaning right above it. The
+// inner edges run parallel to the outer ones, so every stroke has the same
+// weight (about a quarter of the letter's width).
+var letterOutlines = [][]point{
+	{{0, 1}, {0.36, 0}, {0.64, 0}, {1, 1}, {0.76, 1}, {0.68, 0.76}, {0.32, 0.76}, {0.24, 1}},
+	{{0.3867, 0.56}, {0.5, 0.22}, {0.6133, 0.56}},
+	{{0.40, -0.08}, {0.58, -0.08}, {0.80, -0.30}, {0.62, -0.30}},
 }
 
-// letterMask sets Letter as large as fits comfortably inside the keycap
-// (left, top, right, bottom) and centers it there by its actual ink
-// bounds, accent included. If the embedded font can't be read - which
-// would be a build problem, not a runtime one - the keycap is left empty.
+// letterTop and letterBottom bound the outlines vertically; horizontally
+// they span 0 to 1.
+const letterTop, letterBottom = -0.30, 1.0
+
+// inLetter reports whether p is inside the letter (even-odd rule).
+func inLetter(p point) bool {
+	if p.x < 0 || p.x > 1 || p.y < letterTop || p.y > letterBottom {
+		return false
+	}
+	inside := false
+	for _, outline := range letterOutlines {
+		for i, a := range outline {
+			b := outline[(i+1)%len(outline)]
+			if (a.y > p.y) != (b.y > p.y) && p.x < a.x+(p.y-a.y)*(b.x-a.x)/(b.y-a.y) {
+				inside = !inside
+			}
+		}
+	}
+	return inside
+}
+
+// letterMask draws the letter as large as fits comfortably inside the
+// keycap (left, top, right, bottom), centered there.
 func letterMask(size int, left, top, right, bottom float64) *image.Alpha {
-	m := image.NewAlpha(image.Rect(0, 0, size, size))
-	f, err := letterFont()
-	if err != nil {
-		return m
-	}
-
 	// Leave a small margin to the frame on every side.
-	pad := math.Max(1, float64(size)/20)
-	// Small sizes get the letter set a little heavier by drawing it twice,
-	// shifted sideways by a fraction of a pixel: at 16px even a bold face
-	// thins out to grey hairlines otherwise.
-	embolden := math.Max(0, 0.6-float64(size)/80)
+	pad := math.Max(1, float64(size)/16)
 	boxW, boxH := right-left-2*pad, bottom-top-2*pad
+	// Small sizes get the letter set a little heavier, by also filling it
+	// shifted sideways by a fraction of a pixel: at 16px its strokes would
+	// otherwise thin out to grey.
+	embolden := math.Max(0, 0.6-float64(size)/80)
 
-	// Find the largest font size whose ink box fits, starting from one
-	// that is certainly too big.
-	var face font.Face
-	var ink fixed.Rectangle26_6
-	for pt := boxH * 1.4; pt > 1; pt *= 0.98 {
-		fc, err := opentype.NewFace(f, &opentype.FaceOptions{Size: pt, DPI: 72, Hinting: font.HintingNone})
-		if err != nil {
-			return m
-		}
-		b, _ := font.BoundString(fc, Letter)
-		w, h := fixedToFloat(b.Max.X-b.Min.X)+embolden, fixedToFloat(b.Max.Y-b.Min.Y)
-		if w <= boxW && h <= boxH {
-			face, ink = fc, b
-			break
-		}
-		fc.Close()
-	}
-	if face == nil {
-		return m
-	}
-	defer face.Close()
+	scale := math.Min((boxW-embolden)/1, boxH/(letterBottom-letterTop))
+	originX := left + pad + (boxW-embolden-scale)/2
+	originY := top + pad + (boxH-scale*(letterBottom-letterTop))/2 - scale*letterTop
 
-	// Place the pen so the ink box's center lands on the box's center.
-	inkW, inkH := fixedToFloat(ink.Max.X-ink.Min.X)+embolden, fixedToFloat(ink.Max.Y-ink.Min.Y)
-	originX := left + pad + (boxW-inkW)/2 - fixedToFloat(ink.Min.X)
-	originY := top + pad + (boxH-inkH)/2 - fixedToFloat(ink.Min.Y)
-
-	for _, dx := range []float64{0, embolden} {
-		d := font.Drawer{
-			Dst:  m,
-			Src:  image.Opaque,
-			Face: face,
-			Dot:  fixed.Point26_6{X: floatToFixed(originX + dx), Y: floatToFixed(originY)},
+	return coverage(size, func(x, y float64) bool {
+		p := point{(x - originX) / scale, (y - originY) / scale}
+		if inLetter(p) {
+			return true
 		}
-		d.DrawString(Letter)
-		if embolden == 0 {
-			break
-		}
-	}
-	return m
+		return embolden > 0 && inLetter(point{(x - embolden - originX) / scale, p.y})
+	})
 }
 
 // over blends src with alpha a over dst (both straight alpha).
@@ -245,6 +220,3 @@ func over(src color.NRGBA, a uint8, dst color.NRGBA) color.NRGBA {
 	}
 	return color.NRGBA{R: mix(src.R, dst.R), G: mix(src.G, dst.G), B: mix(src.B, dst.B), A: uint8(math.Round(oa * 255))}
 }
-
-func fixedToFloat(v fixed.Int26_6) float64 { return float64(v) / 64 }
-func floatToFixed(v float64) fixed.Int26_6 { return fixed.Int26_6(math.Round(v * 64)) }

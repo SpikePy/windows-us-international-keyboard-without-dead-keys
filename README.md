@@ -37,14 +37,15 @@ To remove it, run the same `Setup_UndeadKeys.exe` and click **Uninstall**.
 Settings live in `%LOCALAPPDATA%\UndeadKeys\config.yaml`, created with
 comments and these defaults the first time the program runs. The tray
 menu's **Configure** opens it; changes take effect the next time the
-program starts.
+program starts (Exit it from the tray and start it again).
 
 | Setting | Default | What it does |
 |---------|---------|--------------|
 | `start_enabled` | `true` | Intercept keys from the start, rather than waiting to be enabled from the tray. |
 | `altgr_shortcuts` | `true` | Type accented characters on AltGr combinations. |
 | `undead_keys` | `true` | Type `'`, `` ` `` and `6` immediately instead of waiting as dead keys. |
-| `restrict_to_layout` | `"00020409"` | Only intercept under this keyboard layout ID (`00020409` is US-International). Empty means every layout. |
+| `restrict_to_layout` | `"00020409"` | Only intercept under this keyboard layout ID (`00020409` is US-International). `""` means every layout. |
+| `autostart` | `true` | Start UndeadKeys when you sign in to Windows. Turn it off and the Startup shortcut disappears the next time the program starts. |
 
 ## Good to know
 
@@ -59,3 +60,7 @@ program starts.
 
 Flags, the full character tables, how it works, logging and building from
 source: see [DETAILS.md](DETAILS.md).
+
+Inspired by
+[umanovskis/win-kbd-usint-nodead](https://github.com/umanovskis/win-kbd-usint-nodead)
+and [kdevo/winlayouts-undead](https://github.com/kdevo/winlayouts-undead).

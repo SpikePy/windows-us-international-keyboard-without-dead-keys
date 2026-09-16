@@ -16,6 +16,7 @@ only; the file itself is never rewritten.
 | `-altgr-shortcuts` | from config.yaml | Type accented characters on AltGr combinations. |
 | `-undead-keys` | from config.yaml | Type the dead keys' plain characters immediately. |
 | `-restrict-to-layout` | from config.yaml | Only intercept under this 8-hex-digit keyboard layout ID; `""` means every layout. |
+| `-autostart` | from config.yaml | Whether the Startup shortcut should exist. The installed copy applies it every time it starts. |
 | `-enable-logging` | off | Append diagnostics to `UndeadKeys.log` next to the exe. |
 
 Booleans take the Go flag form: `-start-enabled=false` to turn one off.
@@ -26,9 +27,8 @@ Booleans take the Go flag form: `-start-enabled=false` to turn one off.
 |------|--------------|
 | `-mode install\|uninstall` | Skip the window and run that action - for scripting. Progress goes to the console it was started from (or wherever its output is redirected), and the exit code is non-zero on failure. |
 | `-install-dir <dir>` | Install into (or remove from) this directory instead of `%LOCALAPPDATA%\UndeadKeys`. |
-| `-github-token <token>` | Use this token for the GitHub API lookup, to avoid the unauthenticated rate limit. Install only. |
-| `-no-launch` | Install/update and register autostart, but don't start it now. Install only. |
-| `-no-autostart` | Don't create or update the Startup shortcut. Install only. |
+| `-no-launch` | Install/update without starting it now. Install only. |
+| `-no-autostart` | Leave the Startup shortcut as it is instead of applying the `autostart` setting. Install only. |
 | `-keep-files` | Uninstall only: remove autostart and stop the process, but leave the installed files. |
 
 ## Configuration
@@ -39,7 +39,18 @@ real file to edit. Keys it doesn't recognize are ignored, so a file
 written by an older (or newer) version keeps working, and a setting with
 an invalid value falls back to that setting's default rather than
 stopping the program - an unusable `restrict_to_layout`, for instance,
-reverts to `00020409`.
+reverts to `00020409`. The file only looks like YAML: the program reads
+its flat `key: value` lines itself (comments, quotes, blank lines and
+Notepad's line endings are all fine), so a few settings don't pull in a
+YAML library. To intercept under every layout, write
+`restrict_to_layout: ""`; a key with nothing after it keeps its default.
+
+`autostart` decides whether the shortcut in your Startup folder exists.
+Setup applies it when it installs, and the installed `UndeadKeys.exe`
+applies it again every time it starts - so after changing it, the next
+start (or a quit and restart from the tray) is enough, no re-install
+needed. A copy started from anywhere other than the install directory
+leaves the shortcut alone.
 
 Your keyboard layout's ID is the last eight hex digits shown by
 `Get-WinUserLanguageList` in PowerShell, or under
@@ -129,14 +140,14 @@ a character instead.
   half a keystroke of the raw key.
 
 The tray icon is `Shell_NotifyIcon` on a hidden window. Its glyph - a
-rounded keycap with an "Á" on it - is drawn at runtime with no image
-files (`internal/keyicon`, `internal/tray`): the keycap from shapes,
-supersampled for smooth edges, and the letter in Go Bold, a typeface
-compiled into the program from `golang.org/x/image`. The program declares
-itself DPI aware and renders the icon at exactly the size the taskbar
-shows at the current display scaling, so Windows never stretches it. It re-adds
-itself when Explorer restarts (the `TaskbarCreated` broadcast), which is
-what otherwise makes tray icons disappear for good.
+rounded keycap with an "Á" on it - is drawn at runtime with no image or
+font files (`internal/keyicon`, `internal/tray`): the keycap from
+rounded rectangles and the letter from three hand-drawn outlines, all
+supersampled for smooth edges. The program declares itself DPI aware and
+renders the icon at exactly the size the taskbar shows at the current
+display scaling, so Windows never stretches it. It re-adds itself when
+Explorer restarts (the `TaskbarCreated` broadcast), which is what
+otherwise makes tray icons disappear for good.
 
 Everything is pure Go calling Win32 through `golang.org/x/sys/windows`:
 no cgo, no GUI toolkit, so it cross-compiles to Windows from any OS and
@@ -163,7 +174,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
 
 `-H=windowsgui` is what keeps either program from opening a console
 window. The setup program still prints for `-mode` runs: it borrows the
-console of whatever started it (see `cmd/undeadkeys-setup/console.go`).
+console of whatever started it (see `useParentConsole` in `cmd/undeadkeys-setup/main.go`).
 
 Tests, and the vet/build combination CI runs:
 
@@ -201,30 +212,29 @@ needs elevation. Regenerate the `.syso` after editing it too.
 
 Tests fail if you forget: one re-renders the glyph and checks that every
 frame appears in each committed `.syso`, another that each manifest is
-embedded in its current form. Another one fails if the
-character tables above stop matching the code.
+embedded in its current form. Another one fails if the character tables
+above stop matching the code.
 
 ## Package layout
 
 | Package | What's in it |
 |---------|--------------|
-| `cmd/undeadkeys` | The tray program: flags, single-instance guard, tray menu, message loop. |
-| `cmd/undeadkeys-setup` | The install/uninstall program: its window (plain Win32, no toolkit), and the `-mode` console path. |
-| `internal/keymap` | The AltGr and undead character tables, and lookup. No OS dependency. |
-| `internal/hook` | What to do with a key (`decide.go`, no OS dependency) and the Win32 hook that feeds it. |
-| `internal/config` | `config.yaml`: defaults, loading, per-field fallback. |
-| `internal/tray` | Tray icon, popup menu, runtime-drawn icon, Explorer-restart recovery. |
-| `internal/keyicon` | Renders the glyph at any size, shared by the tray icon and the file icon. No OS dependency. |
-| `internal/win32` | Win32 declarations shared between packages: window classes, the message loop, opening a file. |
-| `internal/setup` | Install/uninstall, the Startup shortcut (`IShellLink`), and the WinINet download. |
-| `internal/setupflow` | What the setup window shows and does: buttons, labels, the install countdown, closing itself. No OS dependency. |
-| `internal/singleinstance` | The named-mutex guard. |
-| `internal/applog` | The opt-in log file. |
+| `cmd/undeadkeys` | The tray program: flags, single-instance guard, autostart sync, opt-in log, tray menu, message loop. |
+| `cmd/undeadkeys-setup` | The install/uninstall program's entry point: flags, and the `-mode` console path. |
+| `internal/hook` | The character tables and what to do with a key (`hook.go`, no OS dependency), and the Win32 hook that feeds it (`hook_windows.go`). |
+| `internal/config` | `config.yaml`: defaults, parsing, per-field fallback. |
+| `internal/autostart` | The Startup shortcut (`IShellLink`), kept in line with the `autostart` setting. |
+| `internal/tray` | Tray icon, popup menu, Explorer-restart recovery. |
+| `internal/keyicon` | Renders the glyph at any size, shared by the tray, the setup window and the file icon. No OS dependency. |
+| `internal/win32` | Win32 declarations shared between packages: window classes, the message loop, icons from images, DPI awareness. |
+| `internal/setup` | Install/uninstall and the WinINet download (`setup.go`), the setup window (`window.go`), and the release URLs (`release.go`, no OS dependency). |
+| `internal/setupmenu` | What the setup window shows and does: buttons, labels, the install countdown, closing itself. No OS dependency. |
 | `tools/genicon` | Writes the glyph to a multi-resolution `.ico` (16 to 256px). |
 
-The OS-independent packages are the ones with table tests, which is why
+The OS-independent parts are the ones with table tests, which is why
 `go test ./...` passes on Linux CI; the Windows-only code is covered by
-vet and a cross-compile.
+vet and a cross-compile. The only dependency is
+`golang.org/x/sys/windows`.
 
 ## Downloads and CI
 
@@ -236,10 +246,21 @@ Two workflows:
   it builds both exes with the tag stamped in as the version and attaches
   them to a GitHub Release.
 
-`Setup_UndeadKeys.exe` asks the GitHub API for the latest release and
-downloads `UndeadKeys.exe` from it through WinINet, Windows' own HTTP
-stack - so it uses the system proxy settings and Windows' certificate
-store, and keeps megabytes of Go TLS code out of the exe.
+`Setup_UndeadKeys.exe` never uses the GitHub API, whose unauthenticated
+rate limit (60 requests an hour per address) makes installs fail on
+shared networks. It downloads
+`https://github.com/SpikePy/windows-us-international-keyboard-without-dead-keys/releases/latest/download/UndeadKeys.exe`,
+which GitHub redirects to the newest release, and learns that release's
+version by requesting `.../releases/latest` without following the
+redirect and reading the tag from its `Location` header. Both go through
+WinINet, Windows' own HTTP stack - so it uses the system proxy settings
+and Windows' certificate store, and keeps megabytes of Go TLS code out of
+the exe.
+
+The setup window is plain Win32 controls - no toolkit - with a
+common-controls v6 manifest for the current Windows look, the system
+message font, and per-monitor DPI scaling. The install runs on a worker
+goroutine that posts its progress back to the window.
 
 ## Upgrading from the PowerShell install
 

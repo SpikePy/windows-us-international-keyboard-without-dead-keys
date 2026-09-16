@@ -1,10 +1,10 @@
-// Package setupflow is the behaviour behind Setup_UndeadKeys.exe's
+// Package setupmenu is the behaviour behind Setup_UndeadKeys.exe's
 // window: which buttons it offers, what they say, the countdown that
 // installs on its own when nobody is there, and when the window closes
 // itself. The window only draws what View returns and feeds events back
 // in, so all of this is plain data with no OS dependency, tested on any
 // platform.
-package setupflow
+package setupmenu
 
 import (
 	"errors"
@@ -54,6 +54,9 @@ const (
 // Model is the window's whole state.
 type Model struct {
 	Installed bool   // UndeadKeys.exe is present in the install directory
+	Autostart bool   // config.yaml's autostart setting
+	Latest    string // the newest release's tag, once looked up; "" before
+	Own       string // Setup's own version, shown until Latest is known
 	Phase     Phase  //
 	Action    Action // the action running, or last run
 	Auto      bool   // Action was started by the countdown, not the user
@@ -64,9 +67,29 @@ type Model struct {
 	Err       error  // why the last action failed
 }
 
-// New is the window as it first opens.
-func New(installed bool) Model {
-	return Model{Installed: installed, Phase: Choosing, Countdown: CountdownSeconds}
+// New is the window as it first opens. own is Setup's own version ("dev"
+// for a local build), and autostart the current autostart setting.
+func New(installed, autostart bool, own string) Model {
+	return Model{Installed: installed, Autostart: autostart, Own: own, Phase: Choosing, Countdown: CountdownSeconds}
+}
+
+// LatestKnown records the newest release's tag once the background lookup
+// has found it.
+func (m Model) LatestKnown(tag string) Model {
+	m.Latest = tag
+	return m
+}
+
+// version is the release the window talks about: the newest one if known,
+// otherwise the one Setup itself came from, or "" for a local build.
+func (m Model) version() string {
+	switch {
+	case m.Latest != "":
+		return m.Latest
+	case m.Own != "" && m.Own != "dev":
+		return m.Own
+	}
+	return ""
 }
 
 // Tick advances the countdowns by one second.
@@ -152,6 +175,7 @@ func (m Model) CanClose() bool { return m.Phase != Working }
 
 // View is what the window shows.
 type View struct {
+	Title         string // the tool's name and version
 	Heading       string // the line under the title
 	Status        string
 	StatusIsError bool
@@ -174,6 +198,7 @@ type View struct {
 // View derives what to show from m.
 func (m Model) View() View {
 	v := View{
+		Title:            "UndeadKeys",
 		Heading:          "Accented characters on AltGr, no dead keys",
 		Primary:          "Install",
 		PrimaryEnabled:   true,
@@ -185,13 +210,24 @@ func (m Model) View() View {
 	if m.Installed {
 		v.Primary = "Update"
 	}
+	version := m.version()
+	if version != "" {
+		v.Title += " " + version
+	}
 
 	switch m.Phase {
 	case Choosing:
-		if m.Installed {
-			v.Status = "UndeadKeys is installed. Update it to the latest release, or remove it."
-		} else {
-			v.Status = "Installs UndeadKeys for your user account and starts it with Windows. No administrator rights needed."
+		target := "the latest release"
+		if m.Latest != "" {
+			target = m.Latest
+		}
+		switch {
+		case m.Installed:
+			v.Status = fmt.Sprintf("UndeadKeys is installed. Update it to %s, or remove it.", target)
+		case m.Autostart:
+			v.Status = fmt.Sprintf("Installs %s for your user account and starts it with Windows. No administrator rights needed.", installName(m.Latest))
+		default:
+			v.Status = fmt.Sprintf("Installs %s for your user account (autostart is off in config.yaml). No administrator rights needed.", installName(m.Latest))
 		}
 		if m.Countdown > 0 {
 			v.Primary = fmt.Sprintf("%s (%d)", v.Primary, m.Countdown)
@@ -216,6 +252,7 @@ func (m Model) View() View {
 			v.Status = "UndeadKeys has been removed."
 		} else if m.Version != "" {
 			v.Status = fmt.Sprintf("UndeadKeys %s is installed and running.", m.Version)
+			v.Title = "UndeadKeys " + m.Version
 		} else {
 			v.Status = "UndeadKeys is installed and running."
 		}
@@ -232,6 +269,14 @@ func (m Model) View() View {
 		v.Status = fmt.Sprintf("%s failed: %v", verb, errOrUnknown(m.Err))
 	}
 	return v
+}
+
+// installName is what an install will put in place.
+func installName(latest string) string {
+	if latest == "" {
+		return "UndeadKeys"
+	}
+	return "UndeadKeys " + latest
 }
 
 func errOrUnknown(err error) error {
