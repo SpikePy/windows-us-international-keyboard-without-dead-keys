@@ -37,7 +37,9 @@ Opened without `-mode`, Setup shows its dialog with **Install/Update**
 **Close** (change nothing). If nothing is chosen within 5 seconds, it runs
 Install/Update on its own - so double-clicking Setup and walking away
 still installs or updates UndeadKeys - and a line on the first page
-counts down to that. A failed run stays open so the error can be read.
+counts down to that. When such an unattended install succeeds, the result
+page counts down too and closes the dialog after 3 seconds. A run you
+started yourself, and any failed run, stays open until you close it.
 
 ## Configuration
 
@@ -237,7 +239,7 @@ above stop matching the code.
 | `internal/tray` | Tray icon, popup menu, Explorer-restart recovery. |
 | `internal/keyicon` | Renders the glyph at any size, shared by the tray, Setup's dialog and the file icon. No OS dependency. |
 | `internal/win32` | Win32 declarations shared between packages: window classes, the message loop, icons from images, DPI awareness. |
-| `internal/setup` | Install/uninstall and the WinINet download (`setup.go`), plus the release URLs (`release.go`) and the auto-install countdown (`countdown.go`), both without OS dependency. |
+| `internal/setup` | Install/uninstall and the WinINet download (`setup.go`), plus the release URLs (`release.go`) and the auto-install/auto-close countdowns (`countdown.go`), both without OS dependency. |
 | `tools/genicon` | Writes the glyph to a multi-resolution `.ico` (16 to 256px). |
 
 The OS-independent parts are the ones with table tests, which is why
@@ -270,8 +272,9 @@ Setup's window is a Windows task dialog (`TaskDialogIndirect`), so it
 needs no GUI toolkit and draws nothing itself but the tool's icon. The
 first page asks the question and offers Install/Update, Uninstall and
 Close (Close is `IDCANCEL`, so Escape and the title bar's X do the same),
-with the dialog's timer counting down to the automatic Install/Update
-(the countdown text is in `internal/setup/countdown.go`, tested).
+with the dialog's timer counting down to the automatic Install/Update,
+and the result page of an unattended install counting down to closing
+(both countdown texts are in `internal/setup/countdown.go`, tested).
 Choosing navigates to a progress page - a marquee bar, the current step as
 its text, Close disabled - and then to a result page saying what to do
 next, or the error. The action runs on a worker goroutine that talks to

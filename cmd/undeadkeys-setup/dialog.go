@@ -38,6 +38,7 @@ const (
 	tdmNavigatePage          = wmUser + 101
 	tdmSetProgressBarMarquee = wmUser + 107
 	tdmSetElementText        = wmUser + 108
+	tdmClickButton           = wmUser + 102
 	tdmEnableButton          = wmUser + 111
 	tdmUpdateElementText     = wmUser + 114
 
@@ -69,6 +70,9 @@ const (
 	pageChoose   = 0
 	pageProgress = 1
 	pageDone     = 2
+	// pageDoneAuto is the result of a successful unattended install,
+	// which closes itself after setup.AutoCloseSeconds.
+	pageDoneAuto = 3
 )
 
 const title = "UndeadKeys Setup"
@@ -85,10 +89,18 @@ var (
 	failed atomic.Bool
 
 	// firstContent is page one's text above the countdown line, and
-	// shownCountdown the line currently under it. Both are only touched on
-	// the dialog's thread.
+	// shownCountdown the line currently under whichever page counts down.
+	// Both are only touched on the dialog's thread, as is timerRestart:
+	// set when the closing page appears, so its countdown starts from
+	// there rather than from when the dialog opened.
 	firstContent   string
 	shownCountdown string
+	timerRestart   bool
+
+	// doneContent is the closing page's text above its countdown line. The
+	// worker sets it just before navigating there, and the dialog's thread
+	// reads it afterwards.
+	doneContent atomic.Value
 
 	// kept holds every page handed to Windows, so the memory its raw
 	// pointers refer to stays alive while the dialog may still use it.
@@ -230,31 +242,43 @@ func runDialog(o options) int {
 func dialogProc(hwnd, msg, wParam, lParam, refData uintptr) uintptr {
 	switch msg {
 	case tdnNavigated:
-		if refData == pageProgress {
+		switch refData {
+		case pageProgress:
 			win32.SendMessage(hwnd, tdmSetProgressBarMarquee, 1, 0)
 			win32.SendMessage(hwnd, tdmEnableButton, idClose, 0)
+		case pageDoneAuto:
+			timerRestart = true
+			shownCountdown, _ = setup.CloseCountdown(0)
 		}
 	case tdnTimer:
-		// Page one only: run Install/Update once nobody has chosen within
-		// setup.AutoInstallSeconds; wParam is the time since it opened.
-		if refData != pageChoose {
-			break
-		}
-		text, due := setup.Countdown(uint32(wParam))
-		if due {
-			start(hwnd, idInstall)
-			break
-		}
-		if text != shownCountdown {
-			shownCountdown = text
-			// Same length every second, so updating in place (without the
-			// dialog resizing) is enough.
-			setElement(hwnd, tdmUpdateElementText, firstContent+text)
+		// wParam is the time since the dialog opened, or since a timer
+		// notification last returned 1 (which restarts it).
+		switch refData {
+		case pageChoose:
+			// Run Install/Update once nobody has chosen in time.
+			text, due := setup.Countdown(uint32(wParam))
+			if due {
+				start(hwnd, idInstall, true)
+				break
+			}
+			updateCountdown(hwnd, firstContent, text)
+		case pageDoneAuto:
+			if timerRestart {
+				timerRestart = false
+				return 1
+			}
+			text, due := setup.CloseCountdown(uint32(wParam))
+			if due {
+				win32.SendMessage(hwnd, tdmClickButton, idClose, 0)
+				break
+			}
+			base, _ := doneContent.Load().(string)
+			updateCountdown(hwnd, base, text)
 		}
 	case tdnButtonClicked:
 		switch wParam {
 		case idInstall, idUninstall:
-			start(hwnd, int(wParam))
+			start(hwnd, int(wParam), false)
 			return sFalse // keep the dialog open
 		case idClose:
 			if refData == pageProgress {
@@ -265,11 +289,22 @@ func dialogProc(hwnd, msg, wParam, lParam, refData uintptr) uintptr {
 	return sOK
 }
 
+// updateCountdown shows text as the countdown line under base, if it
+// changed. Every second's line has the same length, so updating in place
+// (without the dialog resizing) is enough.
+func updateCountdown(hwnd uintptr, base, text string) {
+	if text == shownCountdown {
+		return
+	}
+	shownCountdown = text
+	setElement(hwnd, tdmUpdateElementText, base+text)
+}
+
 // start switches to the progress page and runs the chosen action on a
-// separate goroutine, so the dialog keeps painting meanwhile. The worker
-// only talks to the dialog through SendMessage, which Windows hands to the
-// dialog's thread.
-func start(hwnd uintptr, choice int) {
+// separate goroutine, so the dialog keeps painting meanwhile. auto is true
+// when the countdown chose, not the user. The worker only talks to the
+// dialog through SendMessage, which Windows hands to the dialog's thread.
+func start(hwnd uintptr, choice int, auto bool) {
 	verb, action := "Installing", "install"
 	if choice == idUninstall {
 		verb, action = "Removing", "uninstall"
@@ -289,7 +324,17 @@ func start(hwnd uintptr, choice int) {
 		defer runtime.UnlockOSThread()
 		tag, err := run(action, dialogOpts, func(step string) { setContent(hwnd, step) })
 		failed.Store(err != nil)
-		navigate(hwnd, resultPage(choice, tag, err))
+		pg := resultPage(choice, tag, err)
+		if auto && err == nil {
+			// Nobody was there to choose, so likely nobody will close it
+			// either: count down and close.
+			doneContent.Store(pg.content + "\n\n")
+			text, _ := setup.CloseCountdown(0)
+			pg.content += "\n\n" + text
+			pg.flags |= tdfCallbackTimer
+			pg.kind = pageDoneAuto
+		}
+		navigate(hwnd, pg)
 	}()
 }
 

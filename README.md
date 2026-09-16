@@ -30,7 +30,7 @@ To remove it, run the same `Setup_UndeadKeys.exe` and click **Uninstall**.
 | Program | What it is |
 |---------|------------|
 | `UndeadKeys.exe` | The background program itself. No window - it lives in the notification area. Left-click the tray icon to pause and resume it, right-click for Enable, Disable, Configure and Exit. |
-| `Setup_UndeadKeys.exe` | Installs, updates and uninstalls the above, from a small Windows dialog with **Install/Update**, **Uninstall** and **Close**. If you don't choose within 5 seconds, it runs Install/Update on its own. |
+| `Setup_UndeadKeys.exe` | Installs, updates and uninstalls the above, from a small Windows dialog with **Install/Update**, **Uninstall** and **Close**. If you don't choose within 5 seconds, it runs Install/Update on its own and closes itself 3 seconds after it succeeds. |
 
 ## Settings
 
