@@ -128,11 +128,15 @@ a character instead.
   character and the key-up is swallowed, so the application never sees
   half a keystroke of the raw key.
 
-The tray icon is `Shell_NotifyIcon` on a hidden window, and the glyph is
-drawn pixel by pixel at runtime (`internal/keyicon`, `internal/tray`) -
-no image files. It re-adds itself when Explorer restarts (the
-`TaskbarCreated` broadcast), which is what otherwise makes tray icons
-disappear for good.
+The tray icon is `Shell_NotifyIcon` on a hidden window. Its glyph - a
+rounded keycap with an "Á" on it - is drawn at runtime with no image
+files (`internal/keyicon`, `internal/tray`): the keycap from shapes,
+supersampled for smooth edges, and the letter in Go Bold, a typeface
+compiled into the program from `golang.org/x/image`. The program declares
+itself DPI aware and renders the icon at exactly the size the taskbar
+shows at the current display scaling, so Windows never stretches it. It re-adds
+itself when Explorer restarts (the `TaskbarCreated` broadcast), which is
+what otherwise makes tray icons disappear for good.
 
 Everything is pure Go calling Win32 through `golang.org/x/sys/windows`:
 no cgo, no GUI toolkit, so it cross-compiles to Windows from any OS and
@@ -203,13 +207,13 @@ character tables above stop matching the code.
 | `internal/hook` | What to do with a key (`decide.go`, no OS dependency) and the Win32 hook that feeds it. |
 | `internal/config` | `config.yaml`: defaults, loading, per-field fallback. |
 | `internal/tray` | Tray icon, popup menu, runtime-drawn icon, Explorer-restart recovery. |
-| `internal/keyicon` | The glyph's geometry, shared by the tray icon and the file icon. |
+| `internal/keyicon` | Renders the glyph at any size, shared by the tray icon and the file icon. No OS dependency. |
 | `internal/win32` | Win32 declarations shared between packages: window classes, the message loop, opening a file. |
 | `internal/setup` | Install/uninstall, the Startup shortcut (`IShellLink`), and the WinINet download. |
 | `internal/setupmenu` | Setup's console menu and its timeouts. No OS dependency. |
 | `internal/singleinstance` | The named-mutex guard. |
 | `internal/applog` | The opt-in log file. |
-| `tools/genicon` | Renders the glyph to a multi-resolution `.ico`. |
+| `tools/genicon` | Writes the glyph to a multi-resolution `.ico` (16 to 256px). |
 
 The OS-independent packages are the ones with table tests, which is why
 `go test ./...` passes on Linux CI; the Windows-only code is covered by

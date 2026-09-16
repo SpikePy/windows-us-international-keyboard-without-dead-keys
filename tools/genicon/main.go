@@ -1,5 +1,5 @@
-// Command genicon renders the keyicon glyph (the same shape used by
-// the runtime tray icon) as a multi-resolution .ico file, for embedding
+// Command genicon renders the keyicon glyph (the same picture the
+// runtime tray icon shows) as a multi-resolution .ico file, for embedding
 // as the .exe file icon of every program in cmd/. It has no OS
 // dependency and runs on any platform.
 //
@@ -21,7 +21,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"image"
-	"image/color"
 	"image/png"
 	"os"
 
@@ -29,10 +28,10 @@ import (
 )
 
 // sizes are the frames baked into the .ico, covering everything from a
-// taskbar-scale icon up to Explorer's "extra large" thumbnail view. Each
-// evenly divides or multiplies GridSize, so nearest-neighbor scaling
-// stays crisp - every edge in the glyph is an axis-aligned rectangle.
-var sizes = []int{16, 24, 32, 48, 256}
+// taskbar-scale icon at 100% and the scaled variants Windows asks for, up
+// to Explorer's "extra large" thumbnail view. Each is rendered at its own
+// size rather than scaled from another, so every one is sharp.
+var sizes = []int{16, 20, 24, 32, 40, 48, 64, 256}
 
 // iconDir and iconDirEntry are the ICO container's header and per-frame
 // directory records; encoding/binary writes their fields packed, in
@@ -53,23 +52,13 @@ type iconDirEntry struct {
 	ImageOffset   uint32
 }
 
-func render(size int) *image.RGBA {
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	black := color.RGBA{0, 0, 0, 255}
-	for y := 0; y < size; y++ {
-		for x := 0; x < size; x++ {
-			switch keyicon.AtScaled(x, y, size) {
-			case keyicon.PartFrame, keyicon.PartAccent:
-				img.Set(x, y, black)
-			}
-		}
-	}
-	return img
+func render(size int) *image.NRGBA {
+	return keyicon.Render(size, true)
 }
 
 // encodeICO packs the given square images, each a distinct size, as a
 // Vista+-style ICO with PNG-compressed frames.
-func encodeICO(imgs []*image.RGBA) ([]byte, error) {
+func encodeICO(imgs []*image.NRGBA) ([]byte, error) {
 	var frames [][]byte
 	for _, img := range imgs {
 		var buf bytes.Buffer
@@ -113,7 +102,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var imgs []*image.RGBA
+	var imgs []*image.NRGBA
 	for _, s := range sizes {
 		imgs = append(imgs, render(s))
 	}

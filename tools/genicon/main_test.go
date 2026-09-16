@@ -10,8 +10,8 @@ import (
 	"testing"
 )
 
-func renderAll() []*image.RGBA {
-	var imgs []*image.RGBA
+func renderAll() []*image.NRGBA {
+	var imgs []*image.NRGBA
 	for _, s := range sizes {
 		imgs = append(imgs, render(s))
 	}

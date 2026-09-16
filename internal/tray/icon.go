@@ -19,6 +19,7 @@ var (
 	procDeleteObject       = modGdi32.NewProc("DeleteObject")
 	procCreateIconIndirect = modUser32.NewProc("CreateIconIndirect")
 	procDestroyIcon        = modUser32.NewProc("DestroyIcon")
+	procGetSystemMetrics   = modUser32.NewProc("GetSystemMetrics")
 )
 
 type bitmapInfoHeader struct {
@@ -43,24 +44,35 @@ type iconInfo struct {
 	hbmColor uintptr
 }
 
-// iconSize matches keyicon.GridSize, so the glyph maps 1:1 with no
-// scaling needed.
-const iconSize = keyicon.GridSize
+// smallIconMetric is SM_CXSMICON: the width Windows draws tray icons at,
+// which grows with the display scaling (16 at 100%, 24 at 150%, ...).
+const smallIconMetric = 49
+
+// iconSize is the size to render the tray icon at: exactly what the
+// taskbar will show, so Windows never has to rescale it. It needs the
+// process to be DPI aware (see win32.EnableDPIAwareness) to see the real
+// value rather than the 100% one.
+func iconSize() int {
+	if n, _, _ := procGetSystemMetrics.Call(smallIconMetric); n > 0 {
+		return int(n)
+	}
+	return 16
+}
 
 // pixel is BGRA order (what a 32bpp Windows DIB section expects).
 type pixel struct{ B, G, R, A byte }
 
-// buildKeyIcon renders the keycap-with-accent glyph as an alpha-blended
-// HICON: a black outline and accent stroke for enabled=true (the hook is
-// intercepting keys). For enabled=false (paused), the exact same glyph is
-// rendered grey instead of black and a diagonal red strike is drawn
-// across it - the conventional "disabled" cue - so it stays clearly
-// recognizable and visible against both light and dark taskbars.
+// buildKeyIcon renders keyicon's glyph - a keycap with an "Á" on it - as an
+// alpha-blended HICON at the taskbar's icon size, in its enabled
+// (black) or disabled (grey with a red strike) look.
 func buildKeyIcon(enabled bool) (uintptr, error) {
+	size := iconSize()
+	glyph := keyicon.Render(size, enabled)
+
 	var bi bitmapInfoHeader
 	bi.biSize = uint32(unsafe.Sizeof(bi))
-	bi.biWidth = iconSize
-	bi.biHeight = -iconSize // negative = top-down DIB, simpler indexing
+	bi.biWidth = int32(size)
+	bi.biHeight = -int32(size) // negative = top-down DIB, same row order as the image
 	bi.biPlanes = 1
 	bi.biBitCount = 32
 	bi.biCompression = 0 // BI_RGB
@@ -70,42 +82,21 @@ func buildKeyIcon(enabled bool) (uintptr, error) {
 	if hColor == 0 {
 		return 0, fmt.Errorf("CreateDIBSection: %w", e)
 	}
-	pixels := unsafe.Slice((*pixel)(unsafe.Pointer(bitsPtr)), iconSize*iconSize)
-
-	black := pixel{B: 0, G: 0, R: 0, A: 255}
-	for y := 0; y < iconSize; y++ {
-		for x := 0; x < iconSize; x++ {
-			switch keyicon.At(x, y) {
-			case keyicon.PartFrame, keyicon.PartAccent:
-				pixels[y*iconSize+x] = black
-			}
-		}
-	}
-
-	if !enabled {
-		grey := pixel{B: 140, G: 140, R: 140, A: 255}
-		for i := range pixels {
-			if pixels[i].A != 0 {
-				pixels[i] = grey
-			}
-		}
-		// Diagonal "disabled" strike, top-left to bottom-right, spanning
-		// the whole canvas (including the transparent background) so
-		// it's unambiguous at tray size regardless of glyph shape.
-		strikeRed := pixel{B: 30, G: 30, R: 200, A: 255}
-		for y := 0; y < iconSize; y++ {
-			for x := 0; x < iconSize; x++ {
-				if d := x - y; d >= -2 && d <= 2 {
-					pixels[y*iconSize+x] = strikeRed
-				}
-			}
+	pixels := unsafe.Slice((*pixel)(unsafe.Pointer(bitsPtr)), size*size)
+	// Icon bitmaps take straight (non-premultiplied) alpha, which is what
+	// Render produces.
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			c := glyph.NRGBAAt(x, y)
+			pixels[y*size+x] = pixel{B: c.B, G: c.G, R: c.R, A: c.A}
 		}
 	}
 
 	// AND mask: all zero bits means "always use the color bitmap's own
-	// alpha", the standard approach for a modern alpha-blended icon.
-	maskBytes := make([]byte, (iconSize/8)*iconSize)
-	hMask, _, e := procCreateBitmap.Call(iconSize, iconSize, 1, 1, uintptr(unsafe.Pointer(&maskBytes[0])))
+	// alpha", the standard approach for a modern alpha-blended icon. Each
+	// row is padded to a 16-bit boundary.
+	maskBytes := make([]byte, ((size+15)/16*2)*size)
+	hMask, _, e := procCreateBitmap.Call(uintptr(size), uintptr(size), 1, 1, uintptr(unsafe.Pointer(&maskBytes[0])))
 	if hMask == 0 {
 		procDeleteObject.Call(hColor)
 		return 0, fmt.Errorf("CreateBitmap: %w", e)

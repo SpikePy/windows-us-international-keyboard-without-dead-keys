@@ -34,6 +34,9 @@ var (
 	procPostQuitMessage     = modUser32.NewProc("PostQuitMessage")
 
 	procShellExecuteW = modShell32.NewProc("ShellExecuteW")
+
+	procSetProcessDpiAwarenessContext = modUser32.NewProc("SetProcessDpiAwarenessContext")
+	procSetProcessDPIAware            = modUser32.NewProc("SetProcessDPIAware")
 )
 
 // Message numbers from WM_APP upward are free for application use.
@@ -190,3 +193,23 @@ func OpenFile(path string) error {
 }
 
 const swShowNormal = 1
+
+// dpiAwarenessContextPerMonitorAwareV2 is (DPI_AWARENESS_CONTEXT)-4,
+// written this way so it is correct whatever uintptr's width.
+const dpiAwarenessContextPerMonitorAwareV2 = ^uintptr(3)
+
+// EnableDPIAwareness tells Windows this program handles display scaling
+// itself. Without it, Windows reports every size as if at 100% and then
+// stretches whatever the program draws - which is what makes a tray icon
+// blurry at 125% or 150%. It picks the best mode the running Windows
+// supports and silently does nothing on failure.
+func EnableDPIAwareness() {
+	if procSetProcessDpiAwarenessContext.Find() == nil {
+		if r, _, _ := procSetProcessDpiAwarenessContext.Call(dpiAwarenessContextPerMonitorAwareV2); r != 0 {
+			return
+		}
+	}
+	if procSetProcessDPIAware.Find() == nil {
+		procSetProcessDPIAware.Call()
+	}
+}

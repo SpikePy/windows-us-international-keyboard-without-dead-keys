@@ -15,8 +15,8 @@
 // features above, are settings in config.yaml in
 // %LOCALAPPDATA%\UndeadKeys, each overridable per-run with a flag.
 //
-// A tray icon (keycap glyph = intercepting, the same glyph greyed out
-// with a diagonal red strike = paused) lets the user pause and resume
+// A tray icon (keycap with an "Á" = enabled, the same glyph greyed out
+// with a diagonal red strike = disabled) lets the user pause and resume
 // without stopping the process: left-click toggles it, right-click opens
 // an Enable/Disable/Configure/Exit menu. Configure opens config.yaml in
 // whatever application Windows has associated with .yaml files.
@@ -41,6 +41,7 @@ import (
 	"windows-us-international-keyboard-without-dead-keys/internal/config"
 	"windows-us-international-keyboard-without-dead-keys/internal/hook"
 	"windows-us-international-keyboard-without-dead-keys/internal/singleinstance"
+	"windows-us-international-keyboard-without-dead-keys/internal/win32"
 )
 
 // version is stamped in at build time via -ldflags "-X main.version=...";
@@ -97,6 +98,10 @@ func main() {
 			logf("PANIC: %v", r)
 		}
 	}()
+
+	// Before any window or icon exists, so the tray icon is drawn at the
+	// size the taskbar really shows.
+	win32.EnableDPIAwareness()
 
 	if err := a.start(); err != nil {
 		logf("EXCEPTION %v", err)
