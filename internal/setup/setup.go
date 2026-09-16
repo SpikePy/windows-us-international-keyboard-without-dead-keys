@@ -73,6 +73,26 @@ type InstallOptions struct {
 	GitHubToken string // optional, avoids the unauthenticated API rate limit
 	NoLaunch    bool   // install/update without starting it now
 	NoAutostart bool   // don't register (or update) the autostart shortcut
+	// Progress, if set, receives a short sentence as each step begins.
+	Progress func(step string)
+}
+
+// IsInstalled reports whether UndeadKeys.exe is present in dir (or the
+// default install directory if dir is empty).
+func IsInstalled(dir string) bool {
+	dir, err := resolveInstallDir(dir)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(dir, assetName))
+	return err == nil && !info.IsDir()
+}
+
+// report passes step to progress, if there is one.
+func report(progress func(string), step string) {
+	if progress != nil {
+		progress(step)
+	}
 }
 
 // Install downloads the latest released UndeadKeys.exe, installs it under
@@ -85,20 +105,21 @@ type InstallOptions struct {
 // refuses to start a second copy via a named mutex - see
 // internal/singleinstance - so this is belt and suspenders). Nothing here
 // needs administrator rights: it only writes inside the user's profile.
-func Install(opts InstallOptions) error {
+// It returns the release tag it installed.
+func Install(opts InstallOptions) (string, error) {
 	dir, err := resolveInstallDir(opts.InstallDir)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating install dir: %w", err)
+		return "", fmt.Errorf("creating install dir: %w", err)
 	}
 	targetPath := filepath.Join(dir, assetName)
 
-	fmt.Printf("Looking up latest release of %s/%s...\n", repoOwner, repoName)
+	report(opts.Progress, "Looking up the latest release...")
 	rel, err := latestRelease(opts.GitHubToken)
 	if err != nil {
-		return fmt.Errorf("fetching latest release: %w", err)
+		return "", fmt.Errorf("fetching latest release: %w", err)
 	}
 	var downloadURL string
 	for _, a := range rel.Assets {
@@ -108,48 +129,49 @@ func Install(opts InstallOptions) error {
 		}
 	}
 	if downloadURL == "" {
-		return fmt.Errorf("release %s has no asset named %s", rel.TagName, assetName)
+		return "", fmt.Errorf("release %s has no asset named %s", rel.TagName, assetName)
 	}
-	fmt.Printf("Downloading %s (%s)...\n", rel.TagName, downloadURL)
+	report(opts.Progress, fmt.Sprintf("Downloading %s...", rel.TagName))
 
 	tmpPath := targetPath + ".download"
 	if err := downloadFile(downloadURL, tmpPath); err != nil {
-		return fmt.Errorf("downloading asset: %w", err)
+		return "", fmt.Errorf("downloading asset: %w", err)
 	}
 
-	fmt.Println("Stopping any already-running instance...")
+	report(opts.Progress, "Stopping the running copy...")
 	if err := stopRunning(); err != nil {
 		os.Remove(tmpPath)
-		return err
+		return "", err
 	}
 
-	fmt.Printf("Installing to %s...\n", targetPath)
+	report(opts.Progress, fmt.Sprintf("Installing to %s...", dir))
 	if err := replaceFile(tmpPath, targetPath); err != nil {
-		return fmt.Errorf("installing: %w", err)
+		return "", fmt.Errorf("installing: %w", err)
 	}
 
 	if !opts.NoAutostart {
-		fmt.Println("Registering autostart...")
+		report(opts.Progress, "Adding it to Startup...")
 		if err := setAutostart(targetPath); err != nil {
-			return fmt.Errorf("registering autostart: %w", err)
+			return "", fmt.Errorf("registering autostart: %w", err)
 		}
 	}
 
 	if !opts.NoLaunch {
-		fmt.Println("Starting it now...")
+		report(opts.Progress, "Starting UndeadKeys...")
 		if err := exec.Command(targetPath).Start(); err != nil {
-			return fmt.Errorf("starting %s: %w", targetPath, err)
+			return "", fmt.Errorf("starting %s: %w", targetPath, err)
 		}
 	}
 
-	fmt.Println("Done.")
-	return nil
+	return rel.TagName, nil
 }
 
 // UninstallOptions configures Uninstall.
 type UninstallOptions struct {
 	InstallDir string // defaults to %LOCALAPPDATA%\UndeadKeys if empty
 	KeepFiles  bool   // remove autostart and stop the process, but leave the installed files in place
+	// Progress, if set, receives a short sentence as each step begins.
+	Progress func(step string)
 }
 
 // Uninstall reverses Install: removes the autostart shortcut (including
@@ -161,24 +183,23 @@ func Uninstall(opts UninstallOptions) error {
 		return err
 	}
 
-	fmt.Println("Removing autostart entry...")
+	report(opts.Progress, "Removing it from Startup...")
 	if err := removeAutostart(); err != nil {
 		return fmt.Errorf("removing autostart: %w", err)
 	}
 
-	fmt.Println("Stopping any running instance...")
+	report(opts.Progress, "Stopping the running copy...")
 	if err := stopRunning(); err != nil {
 		return err
 	}
 
 	if !opts.KeepFiles {
-		fmt.Printf("Removing %s...\n", dir)
+		report(opts.Progress, fmt.Sprintf("Removing %s...", dir))
 		if err := os.RemoveAll(dir); err != nil {
 			return fmt.Errorf("removing %s: %w", dir, err)
 		}
 	}
 
-	fmt.Println("Done.")
 	return nil
 }
 

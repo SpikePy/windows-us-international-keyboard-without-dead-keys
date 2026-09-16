@@ -2,14 +2,18 @@
 
 // Command undeadkeys-setup is the single entry point for installing,
 // updating, and uninstalling UndeadKeys.exe. Run it with no arguments
-// (e.g. by double-clicking Setup_UndeadKeys.exe) and it shows an
-// interactive menu to choose "Install / update" or "Uninstall" -
-// defaulting to "Install / update" on its own if nothing is chosen within
-// promptTimeout. Pass -mode to skip the prompt for scripted use.
+// (e.g. by double-clicking Setup_UndeadKeys.exe) and it opens a small
+// window offering Install/Update and Uninstall - installing on its own if
+// nobody touches the window within a few seconds (see
+// internal/setupflow). Pass -mode to skip the window for scripted use;
+// progress then goes to the console it was started from.
 //
 // Everything it touches is inside the current user's profile
 // (%LOCALAPPDATA%\UndeadKeys and the user's own Startup folder), so it
 // never needs administrator rights.
+//
+// Built with -ldflags "-H=windowsgui", so double-clicking it never flashes
+// a console window.
 package main
 
 import (
@@ -17,78 +21,69 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"time"
 
 	"windows-us-international-keyboard-without-dead-keys/internal/setup"
-	"windows-us-international-keyboard-without-dead-keys/internal/setupmenu"
 )
 
-// promptTimeout is how long the menu waits for a first keypress before
-// defaulting to "install" on its own - so double-clicking the exe and
-// walking away still gets the tool installed/updated.
-const promptTimeout = 5 * time.Second
-
-// autoExitTimeout caps the final "press Enter to exit" wait when the
-// action was auto-chosen and succeeded: nobody was at the keyboard for
-// promptTimeout, so there's likely nobody left to press Enter either. A
-// failed auto-chosen run waits for Enter like a manual one, so the error
-// is still on screen for whoever comes back to it.
-const autoExitTimeout = 3 * time.Second
-
 func main() {
-	mode := flag.String("mode", "", "skip the interactive menu and run this action directly: install or uninstall")
+	mode := flag.String("mode", "", "skip the window and run this action directly: install or uninstall")
 	installDir := flag.String("install-dir", "", "directory to install into/remove from (default: %LOCALAPPDATA%\\UndeadKeys)")
 	githubToken := flag.String("github-token", "", "optional GitHub token, to avoid the unauthenticated API rate limit (install only)")
 	noLaunch := flag.Bool("no-launch", false, "install/update and register autostart, but don't start it now (install only)")
 	noAutostart := flag.Bool("no-autostart", false, "don't register (or update) the autostart shortcut (install only)")
 	keepFiles := flag.Bool("keep-files", false, "remove autostart and stop the process, but don't delete the installed files (uninstall only)")
+
+	hasConsole := useParentConsole()
+	flag.CommandLine.SetOutput(os.Stderr)
 	flag.Parse()
 
-	interactive := *mode == ""
-	action := strings.ToLower(*mode)
-	autoChosen := false
-
-	var in setupmenu.Lines
-	if interactive {
-		in = setupmenu.ReadLines(os.Stdin)
-		var err error
-		action, autoChosen, err = setupmenu.Prompt(in, os.Stdout, promptTimeout)
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "error:", err)
-			os.Exit(1)
-		}
+	install := setup.InstallOptions{
+		InstallDir:  *installDir,
+		GitHubToken: *githubToken,
+		NoLaunch:    *noLaunch,
+		NoAutostart: *noAutostart,
 	}
+	uninstall := setup.UninstallOptions{
+		InstallDir: *installDir,
+		KeepFiles:  *keepFiles,
+	}
+
+	if *mode == "" {
+		if err := runWindow(install, uninstall); err != nil {
+			fail(hasConsole, err)
+		}
+		return
+	}
+
+	printStep := func(step string) { fmt.Println(step) }
+	install.Progress, uninstall.Progress = printStep, printStep
 
 	var err error
-	switch action {
+	switch strings.ToLower(*mode) {
 	case "install":
-		err = setup.Install(setup.InstallOptions{
-			InstallDir:  *installDir,
-			GitHubToken: *githubToken,
-			NoLaunch:    *noLaunch,
-			NoAutostart: *noAutostart,
-		})
-	case "uninstall":
-		err = setup.Uninstall(setup.UninstallOptions{
-			InstallDir: *installDir,
-			KeepFiles:  *keepFiles,
-		})
-	default:
-		fmt.Fprintf(os.Stderr, "error: unknown -mode %q (want install or uninstall)\n", *mode)
-		os.Exit(1)
-	}
-
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-	}
-	if interactive {
-		var exitAfter time.Duration
-		if autoChosen && err == nil {
-			exitAfter = autoExitTimeout
+		var version string
+		if version, err = setup.Install(install); err == nil {
+			fmt.Printf("UndeadKeys %s is installed.\n", version)
 		}
-		setupmenu.WaitForEnter(in, os.Stdout, exitAfter)
+	case "uninstall":
+		if err = setup.Uninstall(uninstall); err == nil {
+			fmt.Println("UndeadKeys has been removed.")
+		}
+	default:
+		err = fmt.Errorf("unknown -mode %q (want install or uninstall)", *mode)
 	}
 	if err != nil {
-		os.Exit(1)
+		fail(hasConsole, err)
 	}
+}
+
+// fail reports err where the user can see it - the console if there is
+// one, otherwise a message box - and exits with status 1.
+func fail(hasConsole bool, err error) {
+	if hasConsole {
+		fmt.Fprintln(os.Stderr, "error:", err)
+	} else {
+		showError(err)
+	}
+	os.Exit(1)
 }

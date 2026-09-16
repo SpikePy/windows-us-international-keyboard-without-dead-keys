@@ -24,7 +24,7 @@ Booleans take the Go flag form: `-start-enabled=false` to turn one off.
 
 | Flag | What it does |
 |------|--------------|
-| `-mode install\|uninstall` | Skip the interactive menu and run that action - for scripting. |
+| `-mode install\|uninstall` | Skip the window and run that action - for scripting. Progress goes to the console it was started from (or wherever its output is redirected), and the exit code is non-zero on failure. |
 | `-install-dir <dir>` | Install into (or remove from) this directory instead of `%LOCALAPPDATA%\UndeadKeys`. |
 | `-github-token <token>` | Use this token for the GitHub API lookup, to avoid the unauthenticated rate limit. Install only. |
 | `-no-launch` | Install/update and register autostart, but don't start it now. Install only. |
@@ -158,12 +158,12 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
   -o UndeadKeys.exe ./cmd/undeadkeys
 
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
-  -ldflags "-s -w" -o Setup_UndeadKeys.exe ./cmd/undeadkeys-setup
+  -ldflags "-H=windowsgui -s -w" -o Setup_UndeadKeys.exe ./cmd/undeadkeys-setup
 ```
 
-`-H=windowsgui` is what keeps the tray program from opening a console
-window; the setup program is a console program and deliberately doesn't
-use it.
+`-H=windowsgui` is what keeps either program from opening a console
+window. The setup program still prints for `-mode` runs: it borrows the
+console of whatever started it (see `cmd/undeadkeys-setup/console.go`).
 
 Tests, and the vet/build combination CI runs:
 
@@ -190,11 +190,18 @@ go run ./tools/genicon undeadkeys.ico
 go run github.com/akavel/rsrc@latest -ico undeadkeys.ico -arch amd64 \
   -o cmd/undeadkeys/rsrc_windows_amd64.syso
 go run github.com/akavel/rsrc@latest -ico undeadkeys.ico -arch amd64 \
+  -manifest cmd/undeadkeys-setup/setup.manifest \
   -o cmd/undeadkeys-setup/rsrc_windows_amd64.syso
 ```
 
-A test fails if you forget: it re-renders the glyph and checks that every
-frame appears in each committed `.syso`. Another one fails if the
+The setup program's `.syso` also carries its application manifest
+(`setup.manifest`): it switches on the modern Windows control styles and
+per-monitor DPI awareness for the setup window, and declares that it never
+needs elevation. Regenerate the `.syso` after editing it too.
+
+Tests fail if you forget: one re-renders the glyph and checks that every
+frame appears in each committed `.syso`, another that each manifest is
+embedded in its current form. Another one fails if the
 character tables above stop matching the code.
 
 ## Package layout
@@ -202,7 +209,7 @@ character tables above stop matching the code.
 | Package | What's in it |
 |---------|--------------|
 | `cmd/undeadkeys` | The tray program: flags, single-instance guard, tray menu, message loop. |
-| `cmd/undeadkeys-setup` | The install/uninstall program. |
+| `cmd/undeadkeys-setup` | The install/uninstall program: its window (plain Win32, no toolkit), and the `-mode` console path. |
 | `internal/keymap` | The AltGr and undead character tables, and lookup. No OS dependency. |
 | `internal/hook` | What to do with a key (`decide.go`, no OS dependency) and the Win32 hook that feeds it. |
 | `internal/config` | `config.yaml`: defaults, loading, per-field fallback. |
@@ -210,7 +217,7 @@ character tables above stop matching the code.
 | `internal/keyicon` | Renders the glyph at any size, shared by the tray icon and the file icon. No OS dependency. |
 | `internal/win32` | Win32 declarations shared between packages: window classes, the message loop, opening a file. |
 | `internal/setup` | Install/uninstall, the Startup shortcut (`IShellLink`), and the WinINet download. |
-| `internal/setupmenu` | Setup's console menu and its timeouts. No OS dependency. |
+| `internal/setupflow` | What the setup window shows and does: buttons, labels, the install countdown, closing itself. No OS dependency. |
 | `internal/singleinstance` | The named-mutex guard. |
 | `internal/applog` | The opt-in log file. |
 | `tools/genicon` | Writes the glyph to a multi-resolution `.ico` (16 to 256px). |

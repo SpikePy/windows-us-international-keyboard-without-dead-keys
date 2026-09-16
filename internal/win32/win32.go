@@ -46,6 +46,10 @@ const (
 	// WMTrayCallback is sent to the tray icon's window when the icon is
 	// clicked.
 	WMTrayCallback = wmApp + 1
+
+	// WMSetupUpdate is posted to the setup window by its worker goroutine
+	// whenever it has progress or a result to show.
+	WMSetupUpdate = wmApp + 2
 )
 
 // CWUseDefault is CW_USEDEFAULT, for CreateWindow's position and size.
@@ -112,6 +116,23 @@ func CreateWindow(exStyle, style uint32, class, title string, x, y, width, heigh
 	)
 	if hwnd == 0 {
 		return 0, fmt.Errorf("CreateWindowExW: %w", e)
+	}
+	return hwnd, nil
+}
+
+// CreateChild creates a visible-or-not (per style) child control of parent
+// with the given control ID.
+func CreateChild(class, text string, style uint32, parent uintptr, id int) (uintptr, error) {
+	hwnd, _, e := procCreateWindowExW.Call(
+		0,
+		uintptr(unsafe.Pointer(UTF16Ptr(class))),
+		uintptr(unsafe.Pointer(UTF16Ptr(text))),
+		uintptr(style),
+		0, 0, 0, 0,
+		parent, uintptr(id), uintptr(ModuleHandle()), 0,
+	)
+	if hwnd == 0 {
+		return 0, fmt.Errorf("CreateWindowExW(%s): %w", class, e)
 	}
 	return hwnd, nil
 }
