@@ -29,6 +29,7 @@ var (
 	procDestroyWindow       = modUser32.NewProc("DestroyWindow")
 	procSetForegroundWindow = modUser32.NewProc("SetForegroundWindow")
 	procPostMessageW        = modUser32.NewProc("PostMessageW")
+	procSendMessageW        = modUser32.NewProc("SendMessageW")
 	procGetMessageW         = modUser32.NewProc("GetMessageW")
 	procTranslateMessage    = modUser32.NewProc("TranslateMessage")
 	procDispatchMessageW    = modUser32.NewProc("DispatchMessageW")
@@ -47,10 +48,6 @@ const (
 	// WMTrayCallback is sent to the tray icon's window when the icon is
 	// clicked.
 	WMTrayCallback = wmApp + 1
-
-	// WMSetupUpdate is posted to the setup window by its worker goroutine
-	// whenever it has progress or a result to show.
-	WMSetupUpdate = wmApp + 2
 )
 
 // CWUseDefault is CW_USEDEFAULT, for CreateWindow's position and size.
@@ -174,6 +171,15 @@ type Msg struct {
 	LParam  uintptr
 	Time    uint32
 	Pt      struct{ X, Y int32 }
+}
+
+// SendMessage sends msg to hwnd and waits until it has been handled,
+// returning the window procedure's result. Windows runs the handler on
+// hwnd's own thread, which makes this the safe way for another goroutine
+// to talk to a window.
+func SendMessage(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
+	r, _, _ := procSendMessageW.Call(hwnd, uintptr(msg), wParam, lParam)
+	return r
 }
 
 // GetMessage blocks until the next message for this thread arrives and

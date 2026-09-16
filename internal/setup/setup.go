@@ -1,9 +1,9 @@
 //go:build windows
 
-// Package setup implements what Setup_UndeadKeys.exe does - downloading
+// Package setup implements what Setup_UndeadKeys.exe does: downloading
 // UndeadKeys.exe, installing it under the user's own profile and keeping
 // its autostart shortcut in line with the setting, and reversing all of
-// that - plus the small window that offers it (window.go).
+// that. The release links it downloads from are in release.go.
 package setup
 
 import (
@@ -18,8 +18,8 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"windows-us-international-keyboard-without-dead-keys/internal/autostart"
 	"windows-us-international-keyboard-without-dead-keys/internal/config"
+	"windows-us-international-keyboard-without-dead-keys/internal/shortcut"
 )
 
 const (
@@ -30,7 +30,7 @@ const (
 	// legacyExeName is what versions before v1.2.0 ran, from the Startup
 	// folder. Its process is stopped on install and uninstall so the old
 	// and the new copy never fight over the same keystrokes (the file
-	// itself is removed by autostart.Sync).
+	// itself is removed by shortcut.SyncAutostart).
 	legacyExeName = "us-international-without-dead-keys.exe"
 
 	userAgent = "undeadkeys-setup"
@@ -49,20 +49,9 @@ func resolveInstallDir(dir string) (string, error) {
 	return filepath.Join(base, installDirName), nil
 }
 
-// IsInstalled reports whether UndeadKeys.exe is present in dir (or the
-// default install directory if dir is empty).
-func IsInstalled(dir string) bool {
-	dir, err := resolveInstallDir(dir)
-	if err != nil {
-		return false
-	}
-	info, err := os.Stat(filepath.Join(dir, assetName))
-	return err == nil && !info.IsDir()
-}
-
-// LatestVersion returns the tag of the newest release, from where GitHub
+// latestVersion returns the tag of the newest release, from where GitHub
 // redirects its "latest release" page.
-func LatestVersion() (string, error) {
+func latestVersion() (string, error) {
 	location, err := redirectTarget(latestPageURL())
 	if err != nil {
 		return "", fmt.Errorf("looking up the latest release: %w", err)
@@ -101,7 +90,7 @@ func Install(opts InstallOptions) (string, error) {
 	targetPath := filepath.Join(dir, assetName)
 
 	progress("Looking up the latest release...")
-	tag, err := LatestVersion()
+	tag, err := latestVersion()
 	if err != nil {
 		return "", err
 	}
@@ -132,7 +121,7 @@ func Install(opts InstallOptions) (string, error) {
 		} else {
 			progress("Leaving it out of Startup (autostart: false)...")
 		}
-		if err := autostart.Sync(cfg.Autostart, targetPath); err != nil {
+		if err := shortcut.SyncAutostart(cfg.Autostart, targetPath); err != nil {
 			return "", fmt.Errorf("updating autostart: %w", err)
 		}
 	}
@@ -165,7 +154,7 @@ func Uninstall(opts UninstallOptions) error {
 	}
 
 	progress("Removing it from Startup...")
-	if err := autostart.Remove(); err != nil {
+	if err := shortcut.SyncAutostart(false, ""); err != nil {
 		return fmt.Errorf("removing autostart: %w", err)
 	}
 

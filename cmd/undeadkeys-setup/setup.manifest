@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<!-- Embedded into rsrc_windows_amd64.syso (see DETAILS.md): modern
-     control styles, per-monitor DPI awareness, and no elevation. -->
+<!--
+  Embedded into Setup_UndeadKeys.exe through rsrc_windows_amd64.syso (see
+  DETAILS.md). It asks for version 6 of the common controls, which has the
+  task dialog Setup's window is built from; says Setup runs with the
+  user's own rights, so Windows never prompts for administrator rights just
+  because the file is called "Setup"; and makes the window sharp on
+  high-DPI screens.
+-->
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv3="urn:schemas-microsoft-com:asm.v3">
   <assemblyIdentity type="win32" name="UndeadKeys.Setup" version="1.0.0.0" processorArchitecture="amd64"/>
   <description>UndeadKeys Setup</description>

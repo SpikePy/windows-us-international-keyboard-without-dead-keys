@@ -25,11 +25,19 @@ Booleans take the Go flag form: `-start-enabled=false` to turn one off.
 
 | Flag | What it does |
 |------|--------------|
-| `-mode install\|uninstall` | Skip the window and run that action - for scripting. Progress goes to the console it was started from (or wherever its output is redirected), and the exit code is non-zero on failure. |
+| `-mode install\|uninstall` | Skip the dialog and run that action - for scripting. Progress goes to the console it was started from (or wherever its output is redirected), and the exit code is non-zero on failure. |
 | `-install-dir <dir>` | Install into (or remove from) this directory instead of `%LOCALAPPDATA%\UndeadKeys`. |
 | `-no-launch` | Install/update without starting it now. Install only. |
 | `-no-autostart` | Leave the Startup shortcut as it is instead of applying the `autostart` setting. Install only. |
-| `-keep-files` | Uninstall only: remove autostart and stop the process, but leave the installed files. |
+| `-keep-files` | Uninstall only: remove the Startup shortcut and stop the process, but leave the installed files. |
+
+Opened without `-mode`, Setup shows its dialog with **Install/Update**
+(install a fresh copy, or update an existing one in place),
+**Uninstall** (remove the program, its shortcut and its settings) and
+**Close** (change nothing). If nothing is chosen within 5 seconds, it runs
+Install/Update on its own - so double-clicking Setup and walking away
+still installs or updates UndeadKeys - and a line on the first page
+counts down to that. A failed run stays open so the error can be read.
 
 ## Configuration
 
@@ -169,11 +177,12 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
   -o UndeadKeys.exe ./cmd/undeadkeys
 
 GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath \
-  -ldflags "-H=windowsgui -s -w" -o Setup_UndeadKeys.exe ./cmd/undeadkeys-setup
+  -ldflags "-H=windowsgui -s -w -X main.version=dev" -o Setup_UndeadKeys.exe ./cmd/undeadkeys-setup
 ```
 
 `-H=windowsgui` is what keeps either program from opening a console
-window. The setup program still prints for `-mode` runs: it borrows the
+window; Setup's version is stamped the same way in the release build. The
+setup program still prints for `-mode` runs: it borrows the
 console of whatever started it (see `useParentConsole` in `cmd/undeadkeys-setup/main.go`).
 
 Tests, and the vet/build combination CI runs:
@@ -206,8 +215,9 @@ go run github.com/akavel/rsrc@latest -ico undeadkeys.ico -arch amd64 \
 ```
 
 The setup program's `.syso` also carries its application manifest
-(`setup.manifest`): it switches on the modern Windows control styles and
-per-monitor DPI awareness for the setup window, and declares that it never
+(`setup.manifest`): it asks for version 6 of the common controls, which
+has the task dialog Setup is built from, turns on per-monitor DPI
+awareness, and declares that it never
 needs elevation. Regenerate the `.syso` after editing it too.
 
 Tests fail if you forget: one re-renders the glyph and checks that every
@@ -220,15 +230,14 @@ above stop matching the code.
 | Package | What's in it |
 |---------|--------------|
 | `cmd/undeadkeys` | The tray program: flags, single-instance guard, autostart sync, opt-in log, tray menu, message loop. |
-| `cmd/undeadkeys-setup` | The install/uninstall program's entry point: flags, and the `-mode` console path. |
+| `cmd/undeadkeys-setup` | Setup: its task dialog (`dialog.go`), flags and the `-mode` console path (`main.go`). |
 | `internal/hook` | The character tables and what to do with a key (`hook.go`, no OS dependency), and the Win32 hook that feeds it (`hook_windows.go`). |
 | `internal/config` | `config.yaml`: defaults, parsing, per-field fallback. |
-| `internal/autostart` | The Startup shortcut (`IShellLink`), kept in line with the `autostart` setting. |
+| `internal/shortcut` | The Startup shortcut (`IShellLink`), kept in line with the `autostart` setting. |
 | `internal/tray` | Tray icon, popup menu, Explorer-restart recovery. |
-| `internal/keyicon` | Renders the glyph at any size, shared by the tray, the setup window and the file icon. No OS dependency. |
+| `internal/keyicon` | Renders the glyph at any size, shared by the tray, Setup's dialog and the file icon. No OS dependency. |
 | `internal/win32` | Win32 declarations shared between packages: window classes, the message loop, icons from images, DPI awareness. |
-| `internal/setup` | Install/uninstall and the WinINet download (`setup.go`), the setup window (`window.go`), and the release URLs (`release.go`, no OS dependency). |
-| `internal/setupmenu` | What the setup window shows and does: buttons, labels, the install countdown, closing itself. No OS dependency. |
+| `internal/setup` | Install/uninstall and the WinINet download (`setup.go`), plus the release URLs (`release.go`) and the auto-install countdown (`countdown.go`), both without OS dependency. |
 | `tools/genicon` | Writes the glyph to a multi-resolution `.ico` (16 to 256px). |
 
 The OS-independent parts are the ones with table tests, which is why
@@ -257,10 +266,30 @@ WinINet, Windows' own HTTP stack - so it uses the system proxy settings
 and Windows' certificate store, and keeps megabytes of Go TLS code out of
 the exe.
 
-The setup window is plain Win32 controls - no toolkit - with a
-common-controls v6 manifest for the current Windows look, the system
-message font, and per-monitor DPI scaling. The install runs on a worker
-goroutine that posts its progress back to the window.
+Setup's window is a Windows task dialog (`TaskDialogIndirect`), so it
+needs no GUI toolkit and draws nothing itself but the tool's icon. The
+first page asks the question and offers Install/Update, Uninstall and
+Close (Close is `IDCANCEL`, so Escape and the title bar's X do the same),
+with the dialog's timer counting down to the automatic Install/Update
+(the countdown text is in `internal/setup/countdown.go`, tested).
+Choosing navigates to a progress page - a marquee bar, the current step as
+its text, Close disabled - and then to a result page saying what to do
+next, or the error. The action runs on a worker goroutine that talks to
+the dialog only through `SendMessage`, and the page showing is passed to
+the dialog callback as its reference data, so no state is shared between
+the two. `TASKDIALOGCONFIG` and `TASKDIALOG_BUTTON` are 1-byte packed, so
+`dialog.go` writes them into byte buffers at fixed offsets and keeps every
+string they point to alive.
+
+## One program, one mode
+
+The blueprint these tools follow has the program do its main action when
+opened and run as a tray service only with `-background`. UndeadKeys has
+no one-off action - intercepting keys in the background is all it does -
+so it has a single mode: opening `UndeadKeys.exe` starts the tray
+service, the Startup shortcut runs it without arguments, and opening it
+while a copy is already running quietly does nothing (the named mutex
+lets only one copy run).
 
 ## Upgrading from the PowerShell install
 

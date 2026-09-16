@@ -1,6 +1,6 @@
 //go:build windows
 
-package autostart
+package shortcut
 
 import (
 	"os"

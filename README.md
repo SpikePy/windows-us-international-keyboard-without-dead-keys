@@ -17,11 +17,11 @@ US, ...) it does nothing at all, so normal typing there is untouched.
 
 Download `Setup_UndeadKeys.exe` from the
 [latest release](https://github.com/SpikePy/windows-us-international-keyboard-without-dead-keys/releases/latest)
-and run it. A small window opens; click **Install** (or just wait - it
-installs on its own after 5 seconds). It puts `UndeadKeys.exe` into
+and run it, then click **Install/Update** (or just wait - it installs on
+its own after 5 seconds). It puts `UndeadKeys.exe` into
 `%LOCALAPPDATA%\UndeadKeys`, starts it, and adds a shortcut to your own
 Startup folder so it comes back at login. Run it again any time and click
-**Update** to get the latest release.
+**Install/Update** to get the latest release.
 
 To remove it, run the same `Setup_UndeadKeys.exe` and click **Uninstall**.
 
@@ -30,7 +30,7 @@ To remove it, run the same `Setup_UndeadKeys.exe` and click **Uninstall**.
 | Program | What it is |
 |---------|------------|
 | `UndeadKeys.exe` | The background program itself. No window - it lives in the notification area. Left-click the tray icon to pause and resume it, right-click for Enable, Disable, Configure and Exit. |
-| `Setup_UndeadKeys.exe` | Installs, updates and uninstalls the above, in a small window with Install/Update and Uninstall buttons. If you don't touch it, it installs on its own after 5 seconds and closes itself when done. |
+| `Setup_UndeadKeys.exe` | Installs, updates and uninstalls the above, from a small Windows dialog with **Install/Update**, **Uninstall** and **Close**. If you don't choose within 5 seconds, it runs Install/Update on its own. |
 
 ## Settings
 

@@ -1,11 +1,11 @@
 //go:build windows
 
-// Package autostart manages the shortcut in the user's own Startup folder
+// Package shortcut manages the shortcut in the user's own Startup folder
 // that starts UndeadKeys at sign-in, keeping it in line with the autostart
 // setting. It is per-user, so nothing here needs administrator rights.
-// Both Setup and the program itself call Sync, so an edited config.yaml
-// takes effect on the next start without re-running Setup.
-package autostart
+// Both Setup and the program itself call SyncAutostart, so an edited
+// config.yaml takes effect on the next start without re-running Setup.
+package shortcut
 
 import (
 	"errors"
@@ -29,11 +29,12 @@ const (
 	description = "UndeadKeys - AltGr accents without dead keys"
 )
 
-// Sync makes the user's Startup folder match the autostart setting: a
-// shortcut that starts target when enabled, none when not. Creating
-// replaces an existing shortcut rather than adding a second one, and
-// removing one that isn't there is not an error.
-func Sync(enabled bool, target string) error {
+// SyncAutostart makes the user's Startup folder match the autostart
+// setting: a shortcut that starts target when enabled, none when not
+// (target is ignored then). Creating replaces an existing shortcut rather
+// than adding a second one, and removing one that isn't there is not an
+// error.
+func SyncAutostart(enabled bool, target string) error {
 	dir, err := windows.KnownFolderPath(windows.FOLDERID_Startup, 0)
 	if err != nil {
 		return fmt.Errorf("locating the Startup folder: %w", err)
@@ -43,9 +44,6 @@ func Sync(enabled bool, target string) error {
 	}
 	return removeFile(filepath.Join(dir, legacyExeName))
 }
-
-// Remove deletes the shortcut, whatever the setting says - for uninstall.
-func Remove() error { return Sync(false, "") }
 
 // syncIn does the file work in dir.
 func syncIn(dir string, enabled bool, target string) error {

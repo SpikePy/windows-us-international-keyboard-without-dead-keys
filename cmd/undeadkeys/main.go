@@ -45,9 +45,9 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"windows-us-international-keyboard-without-dead-keys/internal/autostart"
 	"windows-us-international-keyboard-without-dead-keys/internal/config"
 	"windows-us-international-keyboard-without-dead-keys/internal/hook"
+	"windows-us-international-keyboard-without-dead-keys/internal/shortcut"
 	"windows-us-international-keyboard-without-dead-keys/internal/tray"
 	"windows-us-international-keyboard-without-dead-keys/internal/win32"
 )
@@ -144,7 +144,7 @@ func syncAutostart(enabled bool, logf func(format string, args ...any)) {
 		logf("Not the installed copy (%s) - leaving autostart alone", exe)
 		return
 	}
-	if err := autostart.Sync(enabled, exe); err != nil {
+	if err := shortcut.SyncAutostart(enabled, exe); err != nil {
 		logf("EXCEPTION updating autostart: %v", err)
 		return
 	}
