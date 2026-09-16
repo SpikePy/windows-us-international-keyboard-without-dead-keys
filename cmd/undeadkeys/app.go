@@ -115,9 +115,9 @@ func (a *app) openConfigFile() {
 // applyTrayIcon shows (or updates) the tray icon and tooltip for the
 // current enabled state.
 func (a *app) applyTrayIcon() {
-	build, state := tray.EnabledIcon, "intercepting"
+	build, state := tray.EnabledIcon, "enabled"
 	if !a.hook.Enabled() {
-		build, state = tray.DisabledIcon, "paused"
+		build, state = tray.DisabledIcon, "disabled"
 	}
 	newIcon, err := build()
 	if err != nil {
