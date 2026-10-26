@@ -117,8 +117,8 @@ While AltGr (Right Alt) is held:
 
 These keys are dead keys under "United States-International" - normally
 they swallow the keystroke and wait for a second one to combine into an
-accent. They type their plain character immediately instead, whether or
-not a modifier is held:
+accent. They type their plain character immediately instead, alone or
+with Shift:
 
 | Key | Alone | With Shift |
 |-----|-------|------------|
@@ -127,7 +127,9 @@ not a modifier is held:
 | `6` | `6` | `^` |
 
 A key in both tables (the apostrophe) follows the AltGr table while AltGr
-is held, and the undead table otherwise.
+is held, and the undead table otherwise. While Ctrl, the left Alt or a
+Windows key is held, these keys are left alone, so shortcuts such as
+`` Ctrl+` `` reach the application.
 
 ## How it works
 

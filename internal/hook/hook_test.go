@@ -162,8 +162,8 @@ func TestDecide(t *testing.T) {
 			wantChar: 'é',
 		},
 		{
-			name:    "the release of a handled AltGr key is swallowed",
-			state:   with(allOn, func(s *State) { s.AltGrHeld = true }),
+			name:    "the release of a typed key is swallowed",
+			state:   with(allOn, func(s *State) { s.AltGrHeld, s.PressTyped = true, true }),
 			vk:      'E',
 			keyDown: false,
 			want:    Swallow,
@@ -215,6 +215,42 @@ func TestDecide(t *testing.T) {
 			wantChar: '\'',
 		},
 		{
+			name:     "Shift+` types a tilde",
+			state:    with(allOn, func(s *State) { s.ShiftHeld = true }),
+			vk:       vkOem3,
+			keyDown:  true,
+			want:     Type,
+			wantChar: '~',
+		},
+		{
+			name:    "Ctrl+` is a shortcut and reaches the application as a key",
+			state:   with(allOn, func(s *State) { s.ShortcutHeld = true }),
+			vk:      vkOem3,
+			keyDown: true,
+			want:    PassThrough,
+		},
+		{
+			name:    "Ctrl+Shift+6 is a shortcut too",
+			state:   with(allOn, func(s *State) { s.ShortcutHeld, s.ShiftHeld = true, true }),
+			vk:      '6',
+			keyDown: true,
+			want:    PassThrough,
+		},
+		{
+			name:    "the release of a key whose press passed through passes through",
+			state:   allOn,
+			vk:      vkOem3,
+			keyDown: false,
+			want:    PassThrough,
+		},
+		{
+			name:    "a typed press's release is swallowed even when paused meanwhile",
+			state:   with(allOn, func(s *State) { s.Enabled, s.PressTyped = false, true }),
+			vk:      vkOem3,
+			keyDown: false,
+			want:    Swallow,
+		},
+		{
 			name:    "with undead keys off, the apostrophe is the layout's business again",
 			state:   with(allOn, func(s *State) { s.UndeadKeys = false }),
 			vk:      vkOem7,
@@ -256,7 +292,7 @@ func TestEveryAltGrKeyIsTypedWhileHeld(t *testing.T) {
 		if got, ch := Decide(state, vk, true); got != Type || ch != chars.Plain {
 			t.Errorf("AltGr+%q = %v, %q; want Type, %q", label(vk), got, ch, chars.Plain)
 		}
-		if got, _ := Decide(state, vk, false); got != Swallow {
+		if got, _ := Decide(with(state, func(s *State) { s.PressTyped = true }), vk, false); got != Swallow {
 			t.Errorf("releasing AltGr+%q = %v; want Swallow", label(vk), got)
 		}
 	}

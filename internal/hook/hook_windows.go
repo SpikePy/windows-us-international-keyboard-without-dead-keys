@@ -37,8 +37,12 @@ const (
 	wmSysKeyDown = 0x0104
 	wmSysKeyUp   = 0x0105
 
-	vkShift = 0x10
-	vkRMenu = 0xA5 // Right Alt / AltGr
+	vkShift   = 0x10
+	vkControl = 0x11
+	vkLWin    = 0x5B
+	vkRWin    = 0x5C
+	vkLMenu   = 0xA4 // Left Alt
+	vkRMenu   = 0xA5 // Right Alt / AltGr
 
 	inputKeyboard    = 1
 	keyEventFKeyUp   = 0x0002
@@ -101,6 +105,10 @@ type Hook struct {
 	// sees each key on its own and GetKeyState doesn't reflect keys the
 	// hook itself is still deciding about.
 	altGrHeld bool
+
+	// typed marks the keys whose press was turned into a character, so
+	// their release is swallowed too - and only theirs.
+	typed [256]bool
 
 	// layoutCache remembers the layout check for one foreground window:
 	// answering it means briefly attaching to that window's input thread,
@@ -189,18 +197,30 @@ func (h *Hook) handleKey(vk uint32, wParam uintptr) (ret uintptr, handled bool) 
 		return 0, false
 	}
 
+	vk &= 0xFF // virtual-key codes are a byte; this keeps typed's index in range
 	state := State{
 		Enabled:        h.enabled.Load(),
 		AltGrShortcuts: h.opts.AltGrShortcuts,
 		UndeadKeys:     h.opts.UndeadKeys,
 		AltGrHeld:      h.altGrHeld,
 		ShiftHeld:      keyHeld(vkShift),
+		// AltGr arrives as Ctrl plus Right Alt, so Ctrl only counts as a
+		// shortcut modifier without AltGr.
+		ShortcutHeld: (keyHeld(vkControl) && !h.altGrHeld) ||
+			keyHeld(vkLMenu) || keyHeld(vkLWin) || keyHeld(vkRWin),
+		PressTyped: h.typed[vk],
 	}
 	if state.Enabled {
 		state.LayoutMatches = h.layoutMatches()
 	}
 
-	switch action, ch := Decide(state, vk, keyDown); action {
+	action, ch := Decide(state, vk, keyDown)
+	if keyDown {
+		h.typed[vk] = action == Type
+	} else {
+		h.typed[vk] = false
+	}
+	switch action {
 	case Type:
 		sendUnicodeChar(ch)
 		return 1, true

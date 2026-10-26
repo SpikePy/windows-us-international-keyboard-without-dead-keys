@@ -76,8 +76,9 @@ var AltGr = map[uint32]Chars{
 // Undead maps the keys that the "United States-International" layout
 // treats as dead keys - they normally swallow the keystroke and wait for
 // a second one to combine into an accented letter - to the plain
-// character they should produce instead, immediately. Unlike AltGr,
-// these apply whether or not any modifier is held.
+// character they should produce instead, immediately. They apply alone
+// and with Shift (or AltGr), but not while a shortcut modifier is held:
+// Ctrl+`, Alt+' or Win+6 are shortcuts the application must see as keys.
 var Undead = map[uint32]Chars{
 	vkOem7: {'\'', '"'},
 	vkOem3: {'`', '~'},
@@ -127,37 +128,43 @@ type State struct {
 	// AltGrHeld and ShiftHeld are the modifiers held down right now.
 	AltGrHeld bool
 	ShiftHeld bool
+	// ShortcutHeld is true while Ctrl, the left Alt or a Windows key is
+	// held - not counting the Ctrl that Windows reports along with AltGr.
+	ShortcutHeld bool
+	// PressTyped reports, for a release, whether this key's press was
+	// turned into a character - only then is the release swallowed.
+	PressTyped bool
 }
 
 // Decide reports what to do with a press (keyDown) or release of the key
 // with virtual-key code vk, and the character to type for Action Type.
 //
+// A release follows its press, whatever changed in between: it is
+// swallowed exactly when the press was typed, so letting go of a modifier
+// first never leaves the application with half a keystroke.
+//
 // AltGr wins over the undead keys where a key is in both tables: with
 // AltGr held, the apostrophe types the acute accent it maps to there,
 // and on its own it types a plain apostrophe.
 func Decide(s State, vk uint32, keyDown bool) (Action, rune) {
+	if !keyDown {
+		if s.PressTyped {
+			return Swallow, 0
+		}
+		return PassThrough, 0
+	}
 	if !s.Enabled || !s.LayoutMatches {
 		return PassThrough, 0
 	}
 	if s.AltGrShortcuts && s.AltGrHeld {
 		if ch, ok := Lookup(AltGr, vk, s.ShiftHeld); ok {
-			return handled(keyDown, ch)
+			return Type, ch
 		}
 	}
-	if s.UndeadKeys {
+	if s.UndeadKeys && !s.ShortcutHeld {
 		if ch, ok := Lookup(Undead, vk, s.ShiftHeld); ok {
-			return handled(keyDown, ch)
+			return Type, ch
 		}
 	}
 	return PassThrough, 0
-}
-
-// handled turns a mapped key into its character on the way down, and
-// consumes the matching release so the application never sees half a
-// keystroke.
-func handled(keyDown bool, ch rune) (Action, rune) {
-	if keyDown {
-		return Type, ch
-	}
-	return Swallow, 0
 }
