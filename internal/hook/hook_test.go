@@ -163,7 +163,7 @@ func TestDecide(t *testing.T) {
 		},
 		{
 			name:    "the release of a typed key is swallowed",
-			state:   with(allOn, func(s *State) { s.AltGrHeld, s.PressTyped = true, true }),
+			state:   with(allOn, func(s *State) { s.AltGrHeld, s.PressHandled = true, true }),
 			vk:      'E',
 			keyDown: false,
 			want:    Swallow,
@@ -245,10 +245,45 @@ func TestDecide(t *testing.T) {
 		},
 		{
 			name:    "a typed press's release is swallowed even when paused meanwhile",
-			state:   with(allOn, func(s *State) { s.Enabled, s.PressTyped = false, true }),
+			state:   with(allOn, func(s *State) { s.Enabled, s.PressHandled = false, true }),
 			vk:      vkOem3,
 			keyDown: false,
 			want:    Swallow,
+		},
+		{
+			name:    "Caps Lock is pressed as Shift when it should act as Shift",
+			state:   with(allOn, func(s *State) { s.CapsLockAsShift = true }),
+			vk:      vkCapital,
+			keyDown: true,
+			want:    AsShift,
+		},
+		{
+			name:    "releasing it releases Shift",
+			state:   with(allOn, func(s *State) { s.CapsLockAsShift, s.PressHandled = true, true }),
+			vk:      vkCapital,
+			keyDown: false,
+			want:    AsShift,
+		},
+		{
+			name:    "Shift is released even if paused while Caps Lock was held",
+			state:   with(allOn, func(s *State) { s.Enabled, s.PressHandled = false, true }),
+			vk:      vkCapital,
+			keyDown: false,
+			want:    AsShift,
+		},
+		{
+			name:    "Caps Lock toggles as usual when the setting is off",
+			state:   allOn,
+			vk:      vkCapital,
+			keyDown: true,
+			want:    PassThrough,
+		},
+		{
+			name:    "Caps Lock toggles as usual under another layout",
+			state:   with(allOn, func(s *State) { s.CapsLockAsShift, s.LayoutMatches = true, false }),
+			vk:      vkCapital,
+			keyDown: true,
+			want:    PassThrough,
 		},
 		{
 			name:    "with undead keys off, the apostrophe is the layout's business again",
@@ -292,7 +327,7 @@ func TestEveryAltGrKeyIsTypedWhileHeld(t *testing.T) {
 		if got, ch := Decide(state, vk, true); got != Type || ch != chars.Plain {
 			t.Errorf("AltGr+%q = %v, %q; want Type, %q", label(vk), got, ch, chars.Plain)
 		}
-		if got, _ := Decide(with(state, func(s *State) { s.PressTyped = true }), vk, false); got != Swallow {
+		if got, _ := Decide(with(state, func(s *State) { s.PressHandled = true }), vk, false); got != Swallow {
 			t.Errorf("releasing AltGr+%q = %v; want Swallow", label(vk), got)
 		}
 	}

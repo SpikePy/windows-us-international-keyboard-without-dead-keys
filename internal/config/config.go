@@ -24,6 +24,7 @@ const (
 	DefaultStartEnabled     = true
 	DefaultAltGrShortcuts   = true
 	DefaultUndeadKeys       = true
+	DefaultCapsLockAsShift  = false
 	DefaultRestrictToLayout = USInternationalKLID
 	DefaultAutostart        = true
 )
@@ -54,6 +55,11 @@ altgr_shortcuts: %t
 # still be overridden per-run with -undead-keys.
 undead_keys: %t
 
+# capslock_as_shift: whether Caps Lock acts as a second Shift key - Shift
+# only while it is held, never locked on - instead of toggling. Can still
+# be overridden per-run with -capslock-as-shift.
+capslock_as_shift: %t
+
 # restrict_to_layout: only intercept keys while the focused window's
 # keyboard layout has this 8-hex-digit layout ID - "%s" is
 # "United States-International", the layout this tool is written for.
@@ -74,6 +80,7 @@ type Config struct {
 	StartEnabled     bool
 	AltGrShortcuts   bool
 	UndeadKeys       bool
+	CapsLockAsShift  bool
 	RestrictToLayout string
 	Autostart        bool
 }
@@ -83,6 +90,7 @@ func defaults() Config {
 		StartEnabled:     DefaultStartEnabled,
 		AltGrShortcuts:   DefaultAltGrShortcuts,
 		UndeadKeys:       DefaultUndeadKeys,
+		CapsLockAsShift:  DefaultCapsLockAsShift,
 		RestrictToLayout: DefaultRestrictToLayout,
 		Autostart:        DefaultAutostart,
 	}
@@ -108,7 +116,7 @@ func Load() (Config, error) {
 	if os.IsNotExist(err) {
 		text := fmt.Sprintf(template,
 			DefaultStartEnabled, DefaultAltGrShortcuts, DefaultUndeadKeys,
-			USInternationalKLID, DefaultRestrictToLayout, DefaultAutostart)
+			DefaultCapsLockAsShift, USInternationalKLID, DefaultRestrictToLayout, DefaultAutostart)
 		if werr := os.WriteFile(path, []byte(text), 0o644); werr != nil {
 			return def, fmt.Errorf("writing default config.yaml: %w", werr)
 		}
@@ -165,6 +173,8 @@ func parse(data []byte, cfg *Config) error {
 			cfg.AltGrShortcuts, err = parseBool(value)
 		case "undead_keys":
 			cfg.UndeadKeys, err = parseBool(value)
+		case "capslock_as_shift":
+			cfg.CapsLockAsShift, err = parseBool(value)
 		case "restrict_to_layout":
 			cfg.RestrictToLayout = value
 		case "autostart":

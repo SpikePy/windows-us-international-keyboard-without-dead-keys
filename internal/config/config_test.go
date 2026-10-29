@@ -46,6 +46,7 @@ func TestLoadCreatesDefaultFile(t *testing.T) {
 		"\nstart_enabled: true\n",
 		"\naltgr_shortcuts: true\n",
 		"\nundead_keys: true\n",
+		"\ncapslock_as_shift: false\n",
 		"\nrestrict_to_layout: \"00020409\"\n",
 		"\nautostart: true\n",
 	} {
@@ -73,8 +74,8 @@ func TestLoad(t *testing.T) {
 		},
 		{
 			name: "every field overridden",
-			yaml: "start_enabled: false\naltgr_shortcuts: false\nundead_keys: false\nrestrict_to_layout: \"00000407\"\nautostart: false\n",
-			want: Config{RestrictToLayout: "00000407"},
+			yaml: "start_enabled: false\naltgr_shortcuts: false\nundead_keys: false\ncapslock_as_shift: true\nrestrict_to_layout: \"00000407\"\nautostart: false\n",
+			want: Config{CapsLockAsShift: true, RestrictToLayout: "00000407"},
 		},
 		{
 			name: "a quoted empty layout means every layout",

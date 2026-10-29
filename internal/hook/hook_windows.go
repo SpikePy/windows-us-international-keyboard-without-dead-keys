@@ -39,6 +39,7 @@ const (
 
 	vkShift   = 0x10
 	vkControl = 0x11
+	vkLShift  = 0xA0
 	vkLWin    = 0x5B
 	vkRWin    = 0x5C
 	vkLMenu   = 0xA4 // Left Alt
@@ -47,6 +48,15 @@ const (
 	inputKeyboard    = 1
 	keyEventFKeyUp   = 0x0002
 	keyEventFUnicode = 0x0004
+
+	// scanLShift and scanCapital are the keys' set-1 scan codes, sent
+	// along with their virtual-key codes for applications that read those.
+	scanLShift  = 0x2A
+	scanCapital = 0x3A
+
+	// ownInput tags every event this program sends (dwExtraInfo), so the
+	// hook can tell them from the user's keystrokes and let them through.
+	ownInput = 0x554B4559 // "UKEY"
 
 	// klNameLength is KL_NAMELENGTH: eight hex digits plus the NUL.
 	klNameLength = 9
@@ -78,11 +88,12 @@ type input struct {
 	_    [8]byte
 }
 
-// Options configures Install. The two feature switches and the layout
+// Options configures Install. The feature switches and the layout
 // restriction come straight from config.yaml (or the matching flags).
 type Options struct {
-	AltGrShortcuts bool
-	UndeadKeys     bool
+	AltGrShortcuts  bool
+	UndeadKeys      bool
+	CapsLockAsShift bool
 	// LayoutID restricts interception to the keyboard layout with this
 	// 8-hex-digit ID; empty means every layout.
 	LayoutID string
@@ -106,9 +117,9 @@ type Hook struct {
 	// hook itself is still deciding about.
 	altGrHeld bool
 
-	// typed marks the keys whose press was turned into a character, so
-	// their release is swallowed too - and only theirs.
-	typed [256]bool
+	// handled marks the keys whose press was handled, so their release
+	// is handled too - and only theirs.
+	handled [256]bool
 
 	// layoutCache remembers the layout check for one foreground window:
 	// answering it means briefly attaching to that window's input thread,
@@ -127,8 +138,10 @@ var active *Hook
 
 var hookProc = syscall.NewCallback(func(nCode int32, wParam, lParam uintptr) uintptr {
 	if nCode >= 0 && active != nil {
-		if ret, handled := active.handleKey((*kbdllhookstruct)(unsafe.Pointer(lParam)).VkCode, wParam); handled {
-			return ret
+		if k := (*kbdllhookstruct)(unsafe.Pointer(lParam)); k.DwExtraInfo != ownInput {
+			if ret, handled := active.handleKey(k.VkCode, wParam); handled {
+				return ret
+			}
 		}
 	}
 	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
@@ -153,6 +166,7 @@ func Install(opts Options) (*Hook, error) {
 		return nil, fmt.Errorf("SetWindowsHookExW(WH_KEYBOARD_LL): %w", e)
 	}
 	h.handle = handle
+	h.unlockCapsLock()
 	return h, nil
 }
 
@@ -175,7 +189,24 @@ func (h *Hook) Enabled() bool { return h.enabled.Load() }
 // SetEnabled pauses (false) or resumes (true) interception without
 // removing the hook, so toggling it from the tray never costs the user
 // their hook registration.
-func (h *Hook) SetEnabled(v bool) { h.enabled.Store(v) }
+func (h *Hook) SetEnabled(v bool) {
+	h.enabled.Store(v)
+	if v {
+		h.unlockCapsLock()
+	}
+}
+
+// unlockCapsLock switches Caps Lock off if it is on while Caps Lock is
+// meant to act as Shift - once it stops toggling, the user would have no
+// way left to switch it off. It may have been on before the program
+// started, or turned on while interception was paused.
+func (h *Hook) unlockCapsLock() {
+	if !h.opts.CapsLockAsShift || !h.enabled.Load() || !keyToggled(vkCapital) {
+		return
+	}
+	sendKey(vkCapital, scanCapital, true)
+	sendKey(vkCapital, scanCapital, false)
+}
 
 // handleKey applies Decide to one key event. It reports handled == false
 // for anything the hook doesn't act on, which the callback then passes to
@@ -199,30 +230,30 @@ func (h *Hook) handleKey(vk uint32, wParam uintptr) (ret uintptr, handled bool) 
 
 	vk &= 0xFF // virtual-key codes are a byte; this keeps typed's index in range
 	state := State{
-		Enabled:        h.enabled.Load(),
-		AltGrShortcuts: h.opts.AltGrShortcuts,
-		UndeadKeys:     h.opts.UndeadKeys,
-		AltGrHeld:      h.altGrHeld,
-		ShiftHeld:      keyHeld(vkShift),
+		Enabled:         h.enabled.Load(),
+		AltGrShortcuts:  h.opts.AltGrShortcuts,
+		UndeadKeys:      h.opts.UndeadKeys,
+		CapsLockAsShift: h.opts.CapsLockAsShift,
+		AltGrHeld:       h.altGrHeld,
+		ShiftHeld:       keyHeld(vkShift),
 		// AltGr arrives as Ctrl plus Right Alt, so Ctrl only counts as a
 		// shortcut modifier without AltGr.
 		ShortcutHeld: (keyHeld(vkControl) && !h.altGrHeld) ||
 			keyHeld(vkLMenu) || keyHeld(vkLWin) || keyHeld(vkRWin),
-		PressTyped: h.typed[vk],
+		PressHandled: h.handled[vk],
 	}
 	if state.Enabled {
 		state.LayoutMatches = h.layoutMatches()
 	}
 
 	action, ch := Decide(state, vk, keyDown)
-	if keyDown {
-		h.typed[vk] = action == Type
-	} else {
-		h.typed[vk] = false
-	}
+	h.handled[vk] = keyDown && action != PassThrough
 	switch action {
 	case Type:
 		sendUnicodeChar(ch)
+		return 1, true
+	case AsShift:
+		sendKey(vkLShift, scanLShift, keyDown)
 		return 1, true
 	case Swallow:
 		return 1, true
@@ -280,6 +311,24 @@ func keyHeld(vk uintptr) bool {
 	return int16(state) < 0
 }
 
+// keyToggled reports whether the toggle key vk (such as Caps Lock) is
+// on (GetKeyState's low bit).
+func keyToggled(vk uintptr) bool {
+	state, _, _ := procGetKeyState.Call(vk)
+	return state&1 != 0
+}
+
+// sendKey presses (down) or releases the key vk, tagged as this
+// program's own input so the hook lets it through.
+func sendKey(vk, scan uint16, down bool) {
+	in := input{Type: inputKeyboard}
+	in.Ki.WVk, in.Ki.WScan, in.Ki.DwExtraInfo = vk, scan, ownInput
+	if !down {
+		in.Ki.DwFlags = keyEventFKeyUp
+	}
+	procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
+}
+
 // sendUnicodeChar types ch as a Unicode keystroke, independent of the
 // active layout: KEYEVENTF_UNICODE events carry the character itself
 // rather than a key to be translated. The synthetic events come back
@@ -289,6 +338,7 @@ func sendUnicodeChar(ch rune) {
 	in := input{Type: inputKeyboard}
 	in.Ki.WScan = uint16(ch)
 	in.Ki.DwFlags = keyEventFUnicode
+	in.Ki.DwExtraInfo = ownInput
 	procSendInput.Call(1, uintptr(unsafe.Pointer(&in)), unsafe.Sizeof(in))
 
 	in.Ki.DwFlags = keyEventFUnicode | keyEventFKeyUp

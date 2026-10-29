@@ -67,6 +67,7 @@ func main() {
 	startEnabled := flag.Bool("start-enabled", cfg.StartEnabled, "intercept keys from the start, rather than waiting to be enabled from the tray (overrides config.yaml)")
 	altGrShortcuts := flag.Bool("altgr-shortcuts", cfg.AltGrShortcuts, "type accented characters on AltGr combinations (overrides config.yaml)")
 	undeadKeys := flag.Bool("undead-keys", cfg.UndeadKeys, "type ' ` and 6 immediately instead of waiting as dead keys (overrides config.yaml)")
+	capsLockAsShift := flag.Bool("capslock-as-shift", cfg.CapsLockAsShift, "make Caps Lock act as Shift while held instead of toggling (overrides config.yaml)")
 	restrictToLayout := flag.String("restrict-to-layout", cfg.RestrictToLayout, "only intercept under this 8-hex-digit keyboard layout ID, or \"\" for every layout (overrides config.yaml)")
 	autostartOn := flag.Bool("autostart", cfg.Autostart, "start at sign-in through a Startup-folder shortcut; the installed copy applies this every time it starts (overrides config.yaml)")
 	enableLogging := flag.Bool("enable-logging", false, "write diagnostics to UndeadKeys.log next to the exe")
@@ -95,10 +96,11 @@ func main() {
 	syncAutostart(*autostartOn, logf)
 
 	a := &app{logf: logf, opts: hook.Options{
-		AltGrShortcuts: *altGrShortcuts,
-		UndeadKeys:     *undeadKeys,
-		LayoutID:       *restrictToLayout,
-		StartEnabled:   *startEnabled,
+		AltGrShortcuts:  *altGrShortcuts,
+		UndeadKeys:      *undeadKeys,
+		CapsLockAsShift: *capsLockAsShift,
+		LayoutID:        *restrictToLayout,
+		StartEnabled:    *startEnabled,
 	}}
 	defer func() {
 		a.cleanup()
@@ -118,8 +120,8 @@ func main() {
 		logf("EXCEPTION %v", err)
 		return
 	}
-	logf("Entering message loop (altgr=%v, undead=%v, layout=%q, enabled=%v, autostart=%v)",
-		*altGrShortcuts, *undeadKeys, *restrictToLayout, *startEnabled, *autostartOn)
+	logf("Entering message loop (altgr=%v, undead=%v, capslock-as-shift=%v, layout=%q, enabled=%v, autostart=%v)",
+		*altGrShortcuts, *undeadKeys, *capsLockAsShift, *restrictToLayout, *startEnabled, *autostartOn)
 	a.run()
 	logf("Message loop returned (Exit or unexpected shutdown).")
 }

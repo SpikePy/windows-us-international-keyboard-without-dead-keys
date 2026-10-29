@@ -45,6 +45,7 @@ program starts (Exit it from the tray and start it again).
 | `start_enabled` | `true` | Intercept keys from the start, rather than waiting to be enabled from the tray. |
 | `altgr_shortcuts` | `true` | Type accented characters on AltGr combinations. |
 | `undead_keys` | `true` | Type `'`, `` ` `` and `6` immediately instead of waiting as dead keys. |
+| `capslock_as_shift` | `false` | Make Caps Lock a second Shift key: Shift while held, never locked on. |
 | `restrict_to_layout` | `"00020409"` | Only intercept under this keyboard layout ID (`00020409` is US-International). `""` means every layout. |
 | `autostart` | `true` | Start UndeadKeys when you sign in to Windows. Turn it off and the Startup shortcut disappears the next time the program starts. |
 

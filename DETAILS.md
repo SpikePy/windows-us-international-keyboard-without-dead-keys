@@ -15,6 +15,7 @@ only; the file itself is never rewritten.
 | `-start-enabled` | from config.yaml | Intercept keys from the start, rather than starting paused. |
 | `-altgr-shortcuts` | from config.yaml | Type accented characters on AltGr combinations. |
 | `-undead-keys` | from config.yaml | Type the dead keys' plain characters immediately. |
+| `-capslock-as-shift` | from config.yaml | Make Caps Lock act as Shift while held instead of toggling. |
 | `-restrict-to-layout` | from config.yaml | Only intercept under this 8-hex-digit keyboard layout ID; `""` means every layout. |
 | `-autostart` | from config.yaml | Whether the Startup shortcut should exist. The installed copy applies it every time it starts. |
 | `-enable-logging` | off | Append diagnostics to `UndeadKeys.log` next to the exe. |
@@ -66,6 +67,13 @@ applies it again every time it starts - so after changing it, the next
 start (or a quit and restart from the tray) is enough, no re-install
 needed. A copy started from anywhere other than the install directory
 leaves the shortcut alone.
+
+With `capslock_as_shift` on, Caps Lock is a second Shift key: pressing it
+presses Shift, releasing it releases Shift, and the lock never turns on.
+If Caps Lock is already on when the program starts (or is enabled again
+from the tray), it is switched off, since there would otherwise be no
+key left to do it. Like everything else, this only applies while
+interception is enabled and the layout matches `restrict_to_layout`.
 
 Your keyboard layout's ID is the last eight hex digits shown by
 `Get-WinUserLanguageList` in PowerShell, or under
@@ -144,6 +152,9 @@ a character instead.
   the program briefly attaches to the foreground window's input thread to
   ask. That is far too expensive per keystroke, so the answer is cached
   per foreground window.
+- **Caps Lock as Shift.** Caps Lock is swallowed and a Left Shift press or
+  release is sent in its place. Every event the program sends carries a
+  marker in `dwExtraInfo`, so its own hook lets those through untouched.
 - **AltGr.** A low-level hook sees Right Alt as its own event, so the
   program tracks it across events rather than asking Windows whether it is
   held.
@@ -154,7 +165,8 @@ a character instead.
   virtual-key code 0, which no table maps, so they pass straight through.
 - **Both halves.** For a key that is handled, the key-down types the
   character and the key-up is swallowed, so the application never sees
-  half a keystroke of the raw key.
+  half a keystroke of the raw key. A key-up is handled exactly when its
+  key-down was, whatever changed in between.
 
 The tray icon is `Shell_NotifyIcon` on a hidden window. Its glyph - a
 rounded keycap with an "Á" on it - is drawn at runtime with no image or
